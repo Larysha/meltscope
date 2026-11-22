@@ -25,7 +25,7 @@ jobs:
         with:
           use-public-rspm: true
       - name: Install R packages
-        run: Rscript -e 'install.packages(c("shinylive", "shiny", "bslib", "plotly", "DT", "readxl", "jsonlite"))'
+        run: Rscript -e 'install.packages(c("shinylive", "shiny", "bslib", "readxl", "jsonlite"))'
       - name: Run tests
         run: Rscript tests/test_hrm.R
       - name: Export app to static site

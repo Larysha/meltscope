@@ -1,7 +1,7 @@
 # MeltScope: High Resolution Melt (HRM) analysis in the browser or in RStudio.
 # Analysis functions live in R/hrm.R (loaded automatically by Shiny).
 
-pkgs <- c("shiny", "bslib", "plotly", "DT", "readxl", "cluster", "jsonlite")
+pkgs <- c("shiny", "bslib", "readxl", "cluster", "jsonlite")
 missing_pkgs <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
 if (length(missing_pkgs)) {
   stop("MeltScope needs some R packages that are not installed. Run this line in the R console, then try again:\n\n",
@@ -10,8 +10,6 @@ if (length(missing_pkgs)) {
 suppressPackageStartupMessages({
   library(shiny)
   library(bslib)
-  library(plotly)
-  library(DT)
   library(readxl)   # used in R/hrm.R; listed here so Shinylive bundles it
   library(cluster)
 })
@@ -37,12 +35,27 @@ rename_variants <- function(x, nm) {
 
 help_tip <- function(...) tags$small(class = "text-muted d-block mb-3", ...)
 
+# Figures are drawn in the browser by Plotly.js (www/), filled in by the server via render_fig()
+plot_div <- function(id, height) div(id = id, class = "ms-plot", style = paste0("height:", height, ";"))
+
+page_head <- tags$head(
+  tags$script(src = "plotly-basic-2.35.2.min.js"),
+  tags$script(src = "meltscope.js"),
+  tags$style(HTML("
+    .ms-plot-msg { padding: 2rem 1rem; color: #6c757d; }
+    table.ms-sortable th { cursor: pointer; position: sticky; top: 0; background: #fff; white-space: nowrap; }
+    table.ms-sortable th[data-sort='asc']::after { content: ' \\25B2'; }
+    table.ms-sortable th[data-sort='desc']::after { content: ' \\25BC'; }
+  "))
+)
+
 # ---- UI ------------------------------------------------------------------------
 
 ui <- page_sidebar(
   title = tags$span(tags$b("MeltScope"), tags$span(class = "text-muted ms-2 fs-6", "High Resolution Melt analysis")),
   theme = bs_theme(version = 5, primary = "#1f6f8b", "font-size-base" = "0.95rem"),
   fillable = FALSE,
+  page_head,
   sidebar = sidebar(
     width = 340,
     accordion(
@@ -145,34 +158,34 @@ ui <- page_sidebar(
       layout_columns(
         col_widths = c(7, 5),
         card(card_header("Plate map", tags$small(class = "text-muted ms-2", "click a well to exclude / include it")),
-             plotlyOutput("plate", height = "380px"),
+             plot_div("plate", "380px"),
              actionButton("clear_excl", "Include all wells again",
                           class = "btn-sm btn-outline-secondary", width = "220px")),
         card(card_header("Summary by call"), tableOutput("summary"))
       )
     ),
-    nav_panel("Raw data", plotlyOutput("p_raw", height = "560px")),
-    nav_panel("Normalised", plotlyOutput("p_norm", height = "560px")),
-    nav_panel("Difference", plotlyOutput("p_diff", height = "560px")),
+    nav_panel("Raw data", plot_div("p_raw", "560px")),
+    nav_panel("Normalised", plot_div("p_norm", "560px")),
+    nav_panel("Difference", plot_div("p_diff", "560px")),
     nav_panel(
       "Derivative",
       radioButtons("deriv_type", NULL, inline = TRUE,
                    c("Raw: −dF/dT (as instrument)" = "raw", "Normalised: −d(%)/dT" = "norm")),
-      plotlyOutput("p_deriv", height = "520px")
+      plot_div("p_deriv", "520px")
     ),
     nav_panel(
       "Results table",
       div(class = "mb-2",
           downloadButton("dl_results", "Download results (CSV)", class = "btn-sm"),
           downloadButton("dl_curves", "Download processed curves (CSV)", class = "btn-sm")),
-      DTOutput("results")
+      div(style = "max-height: 640px; overflow-y: auto;", uiOutput("results"))
     ),
     nav_panel(
       "Clustering check",
       layout_columns(
         col_widths = c(7, 5),
-        card(card_header("Wells in PCA space"), plotlyOutput("p_pca", height = "420px")),
-        card(card_header("How well do k groups separate?"), plotlyOutput("p_sil", height = "420px"),
+        card(card_header("Wells in PCA space"), plot_div("p_pca", "420px")),
+        card(card_header("How well do k groups separate?"), plot_div("p_sil", "420px"),
              help_tip("Average silhouette: closer to 1 = cleaner separation. 'Auto' only considers splits with ",
                       "silhouette ≥ 0.5 whose groups differ by at least the minimum difference, then picks the ",
                       "smallest k within 0.05 of the best. Near-ties mean the number of variants is a judgement ",
@@ -297,10 +310,9 @@ server <- function(input, output, session) {
   })
 
   # ---- Exclusions via plate map
-  plate_click <- reactive(suppressWarnings(event_data("plotly_click", source = "plate", priority = "event")))
-  observeEvent(plate_click(), {
-    w <- plate_click()$customdata
-    req(length(w) == 1, !is.na(w), w %in% colnames(mat()$F))
+  observeEvent(input$plate_click, {
+    w <- input$plate_click
+    req(length(w) == 1, w %in% colnames(mat()$F))
     rv$excluded <- if (w %in% rv$excluded) setdiff(rv$excluded, w) else c(rv$excluded, w)
   })
   observeEvent(input$clear_excl, rv$excluded <- character())
@@ -328,38 +340,58 @@ server <- function(input, output, session) {
     list(group = grp, cols = cols)
   })
 
-  finish <- function(p, ylab, fname, xrange = NULL, shapes = list(), annotations = list()) {
-    p |>
-      layout(
-        xaxis = list(title = "Temperature (°C)", range = xrange, zeroline = FALSE, showgrid = FALSE, ticks = "outside"),
-        yaxis = list(title = ylab, zeroline = FALSE, gridcolor = "#eeeeee", ticks = "outside"),
-        font = list(size = input$font), hovermode = "closest", shapes = shapes, annotations = annotations,
-        legend = list(itemclick = "toggle", itemdoubleclick = "toggleothers"),
-        margin = list(t = 30), plot_bgcolor = "white", paper_bgcolor = "white"
-      ) |>
-      config(displaylogo = FALSE, modeBarButtonsToRemove = c("lasso2d", "select2d", "autoScale2d"),
-             toImageButtonOptions = list(format = input$img_fmt, filename = paste(rv$name, fname, sep = "_"),
-                                         width = 1100, height = 650, scale = if (input$img_fmt == "png") 3 else 1))
+  # Draw figure `id` in the browser (www/meltscope.js) whenever its inputs change, but only while its
+  # tab is open. Using Plotly.js directly (not the plotly R package) keeps the in-browser download small.
+  render_fig <- function(id, tab, expr, click_input = NULL) {
+    fig_expr <- substitute(expr)
+    env <- parent.frame()
+    observe({
+      req(input$tabs == tab)
+      fig <- tryCatch(eval(fig_expr, env),
+                      shiny.silent.error = function(e) list(message = conditionMessage(e)),
+                      error = function(e) list(message = paste("Could not draw this plot:", conditionMessage(e))))
+      session$sendCustomMessage("ms-plot", c(list(id = id, clickInput = click_input), fig))
+    })
   }
 
-  # One trace per colour group (wells joined with NA gaps) keeps the legend short and plotting fast
-  curve_plot <- function(x, M, wells, ylab, fname, xrange = NULL, shapes = list(), annotations = list()) {
+  # Assemble a Plotly.js figure; `fname` enables the camera (download) button with that file name
+  fig <- function(traces, layout, fname = NULL) {
+    base <- list(font = list(size = input$font), hovermode = "closest", margin = list(t = 30),
+                 plot_bgcolor = "white", paper_bgcolor = "white")
+    config <- list(displaylogo = FALSE, modeBarButtonsToRemove = I(c("lasso2d", "select2d", "autoScale2d")))
+    if (is.null(fname)) {
+      config$displayModeBar <- FALSE
+    } else {
+      config$toImageButtonOptions <- list(format = input$img_fmt, filename = paste(rv$name, fname, sep = "_"),
+                                          width = 1100, height = 650, scale = if (input$img_fmt == "png") 3 else 1)
+    }
+    list(data = unname(traces), layout = utils::modifyList(base, layout), config = config)
+  }
+
+  axis_title <- function(x) list(text = x)
+
+  # One trace per colour group (wells joined with gaps) keeps the legend short and plotting fast
+  curve_plot <- function(x, M, wells, ylab, fname, shapes = list(), annotations = list()) {
     validate(need(length(wells), "No wells to show (all excluded or negative)."))
     cg <- colouring()
     grp <- cg$group[wells]
     lab <- labels()
-    p <- plot_ly()
-    for (g in unique(grp[order(match(grp, names(cg$cols)))])) {
+    groups <- unique(grp[order(match(grp, names(cg$cols)))])
+    traces <- lapply(groups, function(g) {
       w <- wells[grp == g]
-      p <- add_trace(
-        p, type = "scatter", mode = "lines", name = g,
-        x = rep(c(x, NA), length(w)), y = as.vector(rbind(M[, w, drop = FALSE], NA)),
-        text = rep(lab[w], each = length(x) + 1),
-        hovertemplate = "<b>%{text}</b><br>%{x:.2f} °C<br>%{y:.4g}<extra>%{fullData.name}</extra>",
-        line = list(color = unname(cg$cols[g]), width = input$lw), connectgaps = FALSE
-      )
-    }
-    finish(p, ylab, fname, xrange, shapes, annotations)
+      list(type = "scatter", mode = "lines", name = g,
+           x = I(rep(c(round(x, 3), NA), length(w))),
+           y = I(signif(as.vector(rbind(M[, w, drop = FALSE], NA)), 6)),
+           text = I(rep(unname(lab[w]), each = length(x) + 1)),
+           hovertemplate = "<b>%{text}</b><br>%{x:.2f} °C<br>%{y:.4g}<extra>%{fullData.name}</extra>",
+           line = list(color = unname(cg$cols[g]), width = input$lw), connectgaps = FALSE)
+    })
+    fig(traces, list(
+      xaxis = list(title = axis_title("Temperature (°C)"), zeroline = FALSE, showgrid = FALSE, ticks = "outside"),
+      yaxis = list(title = axis_title(ylab), zeroline = FALSE, gridcolor = "#eeeeee", ticks = "outside"),
+      shapes = shapes, annotations = annotations,
+      legend = list(itemclick = "toggle", itemdoubleclick = "toggleothers")
+    ), fname)
   }
 
   region_shapes <- function() {
@@ -402,7 +434,7 @@ server <- function(input, output, session) {
     )
   })
 
-  output$plate <- renderPlotly({
+  render_fig("plate", "Plate & calls", click_input = "plate_click", {
     t <- calls()
     rows <- match(substr(t$Well, 1, 1), LETTERS)
     cols <- as.integer(substring(t$Well, 2))
@@ -414,26 +446,23 @@ server <- function(input, output, session) {
     hover <- sprintf("<b>%s</b><br>%s%s<br>Tm %s °C", labels()[t$Well], t$Call,
                      ifelse(is.na(t$Confidence), "", sprintf(" (%.0f%%)", t$Confidence)), t$Tm1)
     sz <- if (big) 14 else 30
-    p <- plot_ly(source = "plate") |>
-      add_markers(x = grid$c, y = grid$r, hoverinfo = "skip", showlegend = FALSE,
+    empty <- list(type = "scatter", mode = "markers", x = I(grid$c), y = I(grid$r), hoverinfo = "skip",
+                  showlegend = FALSE,
                   marker = list(size = sz, color = "white", line = list(color = "#d0d0d0", width = 1)))
-    for (g in intersect(names(cc), unique(t$Call))) {
+    wells <- lapply(intersect(names(cc), unique(t$Call)), function(g) {
       i <- which(t$Call == g)
-      p <- add_markers(p, x = cols[i], y = rows[i], name = g, customdata = t$Well[i], text = hover[i],
-                       hovertemplate = "%{text}<extra></extra>",
-                       marker = list(size = sz, color = cc[[g]], symbol = if (g == "Excluded") "x" else "circle",
-                                     line = list(color = "#555", width = 0.5)))
-    }
-    p |>
-      layout(
-        xaxis = list(tickvals = seq_len(nc), side = "top", range = c(0.4, nc + 0.6),
-                     showgrid = FALSE, zeroline = FALSE, title = ""),
-        yaxis = list(tickvals = seq_len(nr), ticktext = LETTERS[seq_len(nr)], autorange = "reversed",
-                     showgrid = FALSE, zeroline = FALSE, title = ""),
-        legend = list(orientation = "h", y = -0.05), margin = list(t = 30, l = 30), font = list(size = input$font - 1)
-      ) |>
-      config(displaylogo = FALSE, displayModeBar = FALSE) |>
-      event_register("plotly_click")
+      list(type = "scatter", mode = "markers", name = g, x = I(cols[i]), y = I(rows[i]),
+           customdata = I(t$Well[i]), text = I(hover[i]), hovertemplate = "%{text}<extra></extra>",
+           marker = list(size = sz, color = cc[[g]], symbol = if (g == "Excluded") "x" else "circle",
+                         line = list(color = "#555", width = 0.5)))
+    })
+    fig(c(list(empty), wells), list(
+      xaxis = list(tickvals = I(seq_len(nc)), side = "top", range = I(c(0.4, nc + 0.6)),
+                   showgrid = FALSE, zeroline = FALSE),
+      yaxis = list(tickvals = I(seq_len(nr)), ticktext = I(LETTERS[seq_len(nr)]), autorange = "reversed",
+                   showgrid = FALSE, zeroline = FALSE),
+      legend = list(orientation = "h", y = -0.05), margin = list(t = 30, l = 30), font = list(size = input$font - 1)
+    ))
   })
 
   output$summary <- renderTable({
@@ -451,13 +480,13 @@ server <- function(input, output, session) {
     }))
   }, striped = TRUE, width = "100%")
 
-  output$p_raw <- renderPlotly({
+  render_fig("p_raw", "Raw data", {
     r <- res()
     wells <- setdiff(colnames(r$F), rv$excluded)
     curve_plot(r$temp, r$F, wells, "Fluorescence", "raw", shapes = region_shapes(), annotations = region_labels())
   })
 
-  output$p_norm <- renderPlotly({
+  render_fig("p_norm", "Normalised", {
     r <- res()
     i <- in_region()
     curve_plot(r$temp[i], r$N[i, , drop = FALSE], analysed(), "Normalised fluorescence (%)", "normalised")
@@ -475,7 +504,7 @@ server <- function(input, output, session) {
     rowMeans(r$N[, w, drop = FALSE])
   })
 
-  output$p_diff <- renderPlotly({
+  render_fig("p_diff", "Difference", {
     req(input$ref)
     r <- res()
     i <- in_region()
@@ -496,7 +525,7 @@ server <- function(input, output, session) {
     D
   })
 
-  output$p_deriv <- renderPlotly({
+  render_fig("p_deriv", "Derivative", {
     r <- res()
     if (input$deriv_type == "raw") {
       curve_plot(r$temp, r$D, setdiff(colnames(r$F), rv$excluded), "−dF/dT", "derivative",
@@ -508,11 +537,20 @@ server <- function(input, output, session) {
     }
   })
 
-  output$results <- renderDT({
+  # Plain HTML table; click a column header to sort (www/meltscope.js)
+  output$results <- renderUI({
     t <- calls()
-    datatable(t, rownames = FALSE, filter = "top", extensions = character(),
-              options = list(pageLength = 384, dom = "ti")) |>
-      formatStyle("Call", backgroundColor = styleEqual(names(call_colours()), paste0(call_colours(), "55")))
+    tint <- paste0(call_colours()[t$Call], "55")
+    rows <- lapply(seq_len(nrow(t)), function(i) {
+      cells <- lapply(names(t), function(col) {
+        v <- t[[col]][i]
+        v <- if (is.na(v)) "" else as.character(v)
+        if (col == "Call") tags$td(style = paste0("background:", tint[i]), v) else tags$td(v)
+      })
+      tags$tr(cells)
+    })
+    tags$table(class = "table table-sm table-hover ms-sortable",
+               tags$thead(tags$tr(lapply(names(t), tags$th))), tags$tbody(rows))
   })
 
   output$dl_results <- downloadHandler(
@@ -538,39 +576,39 @@ server <- function(input, output, session) {
     }
   )
 
-  output$p_pca <- renderPlotly({
+  render_fig("p_pca", "Clustering check", {
     r <- res()
     s <- r$scores
     validate(need(!is.null(s), "No wells were clustered."))
     t <- calls()[match(rownames(s), calls()$Well), ]
-    x <- s[, 1]
-    y <- if (ncol(s) > 1) s[, 2] else seq_along(x)
+    x <- unname(s[, 1])  # named vectors would be sent as JSON objects, not arrays
+    y <- if (ncol(s) > 1) unname(s[, 2]) else seq_along(x)
     cc <- call_colours()
-    p <- plot_ly()
-    for (g in intersect(names(cc), unique(t$Call))) {
+    traces <- lapply(intersect(names(cc), unique(t$Call)), function(g) {
       i <- t$Call == g
-      p <- add_markers(p, x = x[i], y = y[i], name = g, text = labels()[t$Well[i]],
-                       hovertemplate = "%{text}<extra></extra>",
-                       marker = list(size = 11, color = cc[[g]], line = list(color = "#333", width = 0.5)))
-    }
+      list(type = "scatter", mode = "markers", name = g, x = I(x[i]), y = I(y[i]),
+           text = I(unname(labels()[t$Well[i]])), hovertemplate = "%{text}<extra></extra>",
+           marker = list(size = 11, color = cc[[g]], line = list(color = "#333", width = 0.5)))
+    })
     lab <- if (input$features == "tm") c("Tm (°C)", "well (index)") else c("PC1", "PC2")
-    p |> layout(xaxis = list(title = lab[1], zeroline = FALSE), yaxis = list(title = lab[2], zeroline = FALSE),
-                font = list(size = input$font - 1)) |>
-      config(displaylogo = FALSE)
+    fig(traces, list(xaxis = list(title = axis_title(lab[1]), zeroline = FALSE),
+                     yaxis = list(title = axis_title(lab[2]), zeroline = FALSE),
+                     font = list(size = input$font - 1)), "clustering_pca")
   })
 
-  output$p_sil <- renderPlotly({
+  render_fig("p_sil", "Clustering check", {
     s <- res()$silhouette
     validate(need(!is.null(s), "Too few wells to compare group numbers."))
-    plot_ly(s, x = ~k, y = ~silhouette, type = "scatter", mode = "lines+markers",
-            line = list(color = "#1f6f8b"), marker = list(size = 9, color = "#1f6f8b"),
-            hovertemplate = "k = %{x}<br>silhouette %{y:.2f}<extra></extra>") |>
-      layout(xaxis = list(title = "Number of variants (k)", dtick = 1),
-             yaxis = list(title = "Average silhouette", range = c(0, 1)),
-             shapes = list(list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = 0.5, y1 = 0.5,
-                                line = list(dash = "dot", color = "#999"))),
-             font = list(size = input$font - 1)) |>
-      config(displaylogo = FALSE)
+    trace <- list(type = "scatter", mode = "lines+markers", x = I(s$k), y = I(round(s$silhouette, 3)),
+                  line = list(color = "#1f6f8b"), marker = list(size = 9, color = "#1f6f8b"),
+                  hovertemplate = "k = %{x}<br>silhouette %{y:.2f}<extra></extra>")
+    fig(list(trace), list(
+      xaxis = list(title = axis_title("Number of variants (k)"), dtick = 1),
+      yaxis = list(title = axis_title("Average silhouette"), range = I(c(0, 1))),
+      shapes = list(list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = 0.5, y1 = 0.5,
+                         line = list(dash = "dot", color = "#999"))),
+      font = list(size = input$font - 1)
+    ), "clustering_silhouette")
   })
 
   # ---- Settings save / load

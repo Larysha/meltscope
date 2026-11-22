@@ -19,15 +19,15 @@ Pick **one** of these options.
 
 Open **https://larysha.github.io/meltscope/** in Chrome, Firefox, Edge or Safari.
 
-The first load takes about 20–60 seconds while the analysis engine downloads into your browser, and later visits are
-faster. Everything runs on your own computer: files you upload are not sent anywhere.
+The first visit takes a little while (about a minute on a fast connection) while the analysis engine downloads into
+your browser; later visits are much faster. Everything runs on your own computer: files you upload are not sent anywhere.
 
 ### Option B: in RStudio, with one line
 
 1. Install [R](https://cran.r-project.org) and [RStudio Desktop](https://posit.co/download/rstudio-desktop/) (free).
 2. Open RStudio. In the **Console** (bottom-left panel), paste this line and press Enter. You only need to do this once:
    ```r
-   install.packages(c("shiny", "bslib", "plotly", "DT", "readxl", "jsonlite"))
+   install.packages(c("shiny", "bslib", "readxl"))
    ```
 3. Every time you want to use MeltScope, paste this line and press Enter:
    ```r
@@ -89,39 +89,26 @@ The **Help** tab in the app explains every setting.
 | "Pre-/post-melt regions must each cover at least 3 readings" | Widen the region sliders slightly. |
 | Curves look jagged in the derivative plot | Increase *Smoothing* a little (this can shift Tm slightly; see Help). |
 | A well is called *Negative* | Its fluorescence barely changed (e.g. NTC or failed PCR). Lower the *Negative* threshold if that is wrong. |
-| Browser version stuck on "loading" | Wait up to a minute on first use. Try Chrome or Firefox, or use Option B. |
+| Browser version slow to start | The first visit downloads the analysis engine (about 40 MB), so it can take a few minutes on a slow connection; later visits are much faster. Use Chrome, Edge or Firefox, or Option B. |
 
 ---
 
-## For maintainers
+## Methods and credits
 
-```
-meltscope/
-├── app/
-│   ├── app.R          # user interface + plots (Shiny)
-│   ├── R/hrm.R        # all analysis maths, plain R (no Shiny), loaded automatically
-│   ├── help.html      # in-app Help tab
-│   └── example/       # synthetic example plate (long Excel/CSV, wide CSV) + sample names
-├── tests/test_hrm.R   # run: Rscript tests/test_hrm.R
-├── tools/make_example_data.R      # regenerates the synthetic example plate
-└── .github/workflows/deploy.yml   # tests, builds the browser version, publishes to GitHub Pages
-```
+MeltScope follows the analysis workflow of Thermo Fisher's HRM software
+([High Resolution Melt Analysis Module user guide](https://assets.thermofisher.com/TFS-Assets/LSG/manuals/MAN0018981_HighResolutionMelt_DA_SW_UG.pdf);
+[High Resolution Melt Software v3.0 user guide](https://documents.thermofisher.com/TFS-Assets/LSG/manuals/4457847.pdf)):
+pre- and post-melt regions that scale each curve from 100% to 0%, a difference plot against a reference, a
+derivative plot, and automatic variant calls with a confidence value. Temperature shifting and the normalisation
+maths follow the published HRM methods:
 
-- **Publishing the browser version:** push to `main` on GitHub, then in the repo go to *Settings → Pages → Source:
-  GitHub Actions*. Each push re-runs the tests and redeploys automatically.
-- **Building the browser version locally:** `install.packages("shinylive")` (on Linux this first needs
-  `sudo apt install libarchive-dev`), then `shinylive::export("app", "site")` and
-  `httpuv::runStaticServer("site")`.
-- **Code style:** `lintr::lint_dir(".")` (rules in `.lintr`).
-- **Using the analysis without the app:** `source("app/R/hrm.R")`, then
-  `m <- to_matrix(read_melt("file.xlsx"))` and `analyse(m, params)` (see `tests/test_hrm.R` for a full example).
-- Only packages that also run in the browser (webR) can be used: currently shiny, bslib, plotly, DT, readxl,
-  jsonlite and cluster.
+- Wittwer CT, Reed GH, Gundry CN, Vandersteen JG, Pryor RJ (2003). High-resolution genotyping by amplicon melting
+  analysis using LCGreen. *Clinical Chemistry* 49(6):853–860. [PubMed 12765979](https://pubmed.ncbi.nlm.nih.gov/12765979/)
+- Palais R, Wittwer CT (2009). Mathematical algorithms for high-resolution DNA melting analysis. *Methods in
+  Enzymology* 454:323–343. [PubMed 19216933](https://pubmed.ncbi.nlm.nih.gov/19216933/)
 
-## Credits and licence
+MeltScope is an independent, open-source alternative. It is not affiliated with or endorsed by Thermo Fisher
+Scientific, and its algorithms (smoothing, clustering, confidence scores) are its own. Results will be close to, but
+not identical with, those from commercial HRM software, so validate calls with known controls.
 
-Developed by Larysha Rothmann. Inspired by [hrmR](https://github.com/pavlohrab/hrmR) (Pavlo Hrab), rewritten from
-scratch. The analysis follows the standard HRM workflow (pre/post-melt normalisation, temperature shifting, difference
-plots, automatic variant calling) used by commercial HRM software.
-
-Released under the [MIT licence](LICENSE).
+Developed by Larysha Rothmann. Released under the [MIT licence](LICENSE).
