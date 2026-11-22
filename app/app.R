@@ -35,6 +35,17 @@ rename_variants <- function(x, nm) {
 
 help_tip <- function(...) tags$small(class = "text-muted d-block mb-3", ...)
 
+# Summary card above the tabs; cards wrap onto new rows on narrow screens
+stat_card <- function(title, value, detail, primary = FALSE, small = FALSE) {
+  div(class = paste("ms-stat", if (primary) "ms-stat-primary"),
+      div(class = "ms-stat-title", title),
+      div(class = paste("ms-stat-value", if (small) "small"), value),
+      div(class = "ms-stat-detail", detail))
+}
+
+# Side by side on wide screens, stacked on laptops/tablets
+two_columns <- function(...) layout_columns(col_widths = breakpoints(sm = 12, xl = c(6, 6)), ...)
+
 # Figures are drawn in the browser by Plotly.js (www/), filled in by the server via render_fig()
 plot_div <- function(id, height) div(id = id, class = "ms-plot", style = paste0("height:", height, ";"))
 
@@ -46,6 +57,15 @@ page_head <- tags$head(
     table.ms-sortable th { cursor: pointer; position: sticky; top: 0; background: #fff; white-space: nowrap; }
     table.ms-sortable th[data-sort='asc']::after { content: ' \\25B2'; }
     table.ms-sortable th[data-sort='desc']::after { content: ' \\25BC'; }
+    #summary td { white-space: nowrap; }
+    .ms-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .75rem;
+                margin-bottom: 1rem; }
+    .ms-stat { border: 1px solid #dee2e6; border-radius: .5rem; padding: .6rem .9rem; background: #fff; min-width: 0; }
+    .ms-stat-primary { background: #1f6f8b; border-color: #1f6f8b; color: #fff; }
+    .ms-stat-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; opacity: .75; }
+    .ms-stat-value { font-size: 1.6rem; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+    .ms-stat-value.small { font-size: 1rem; padding: .3rem 0; }
+    .ms-stat-detail { font-size: .85rem; opacity: .85; }
   "))
 )
 
@@ -155,13 +175,12 @@ ui <- page_sidebar(
     id = "tabs",
     nav_panel(
       "Plate & calls",
-      layout_columns(
-        col_widths = c(7, 5),
+      two_columns(
         card(card_header("Plate map", tags$small(class = "text-muted ms-2", "click a well to exclude / include it")),
              plot_div("plate", "380px"),
              actionButton("clear_excl", "Include all wells again",
                           class = "btn-sm btn-outline-secondary", width = "220px")),
-        card(card_header("Summary by call"), tableOutput("summary"))
+        card(card_header("Summary by call"), div(style = "overflow-x: auto;", tableOutput("summary")))
       )
     ),
     nav_panel("Raw data", plot_div("p_raw", "560px")),
@@ -182,8 +201,7 @@ ui <- page_sidebar(
     ),
     nav_panel(
       "Clustering check",
-      layout_columns(
-        col_widths = c(7, 5),
+      two_columns(
         card(card_header("Wells in PCA space"), plot_div("p_pca", "420px")),
         card(card_header("How well do k groups separate?"), plot_div("p_sil", "420px"),
              help_tip("Average silhouette: closer to 1 = cleaner separation. 'Auto' only considers splits with ",
@@ -420,18 +438,12 @@ server <- function(input, output, session) {
                  "The Help tab walks through each step."))
     }
     t <- calls()
-    layout_columns(
-      fill = FALSE, height = "140px",
-      value_box("Data", tags$span(class = "fs-6 text-break", rv$name),
-                p(sprintf("%d wells · target %s", nrow(t), input$target)),
-                showcase = icon("table"), theme = "light"),
-      value_box("Variants found", res()$k, p(sprintf("%d wells called", sum(t$Status == "Called"))),
-                showcase = icon("layer-group"), theme = "primary"),
-      value_box("Need a look", sum(t$Status %in% c("Low confidence", "Negative")),
-                p(sprintf("%d unknown · %d negative · %d excluded", sum(t$Status == "Low confidence"),
-                          sum(t$Status == "Negative"), sum(t$Status == "Excluded"))),
-                showcase = icon("triangle-exclamation"), theme = "light")
-    )
+    div(class = "ms-stats",
+        stat_card("Data", rv$name, sprintf("%d wells · target %s", nrow(t), input$target), small = TRUE),
+        stat_card("Variants found", res()$k, sprintf("%d wells called", sum(t$Status == "Called")), primary = TRUE),
+        stat_card("Need a look", sum(t$Status %in% c("Low confidence", "Negative")),
+                  sprintf("%d unknown · %d negative · %d excluded", sum(t$Status == "Low confidence"),
+                          sum(t$Status == "Negative"), sum(t$Status == "Excluded"))))
   })
 
   render_fig("plate", "Plate & calls", click_input = "plate_click", {
@@ -445,7 +457,7 @@ server <- function(input, output, session) {
     cc <- call_colours()
     hover <- sprintf("<b>%s</b><br>%s%s<br>Tm %s °C", labels()[t$Well], t$Call,
                      ifelse(is.na(t$Confidence), "", sprintf(" (%.0f%%)", t$Confidence)), t$Tm1)
-    sz <- if (big) 14 else 30
+    sz <- 10  # starting size; www/meltscope.js resizes wells to the available space
     empty <- list(type = "scatter", mode = "markers", x = I(grid$c), y = I(grid$r), hoverinfo = "skip",
                   showlegend = FALSE,
                   marker = list(size = sz, color = "white", line = list(color = "#d0d0d0", width = 1)))
@@ -456,13 +468,14 @@ server <- function(input, output, session) {
            marker = list(size = sz, color = cc[[g]], symbol = if (g == "Excluded") "x" else "circle",
                          line = list(color = "#555", width = 0.5)))
     })
-    fig(c(list(empty), wells), list(
+    plate <- fig(c(list(empty), wells), list(
       xaxis = list(tickvals = I(seq_len(nc)), side = "top", range = I(c(0.4, nc + 0.6)),
                    showgrid = FALSE, zeroline = FALSE),
       yaxis = list(tickvals = I(seq_len(nr)), ticktext = I(LETTERS[seq_len(nr)]), autorange = "reversed",
                    showgrid = FALSE, zeroline = FALSE),
       legend = list(orientation = "h", y = -0.05), margin = list(t = 30, l = 30), font = list(size = input$font - 1)
     ))
+    c(plate, list(fitWells = list(rows = nr, cols = nc)))  # browser resizes wells to fit the plot
   })
 
   output$summary <- renderTable({

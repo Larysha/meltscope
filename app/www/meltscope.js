@@ -19,7 +19,17 @@ Shiny.addCustomMessageHandler("ms-plot", function (msg) {
   }
   const note = el.querySelector(".ms-plot-msg");
   if (note) note.remove();
-  Plotly.react(el, msg.data, msg.layout, Object.assign({ responsive: true }, msg.config));
+  el._msFit = msg.fitWells || null;
+  el._msWellSize = null;
+  Plotly.react(el, msg.data, msg.layout, Object.assign({ responsive: true }, msg.config))
+    .then(function () { fitWells(el); });
+  if (!el._msObserver && window.ResizeObserver) {
+    // Redraw when the plot's box changes size (window, sidebar toggle, layout reflow)
+    el._msObserver = new ResizeObserver(function () {
+      if (el._fullLayout) Plotly.Plots.resize(el).then(function () { fitWells(el); });
+    });
+    el._msObserver.observe(el);
+  }
   if (msg.clickInput && !el._msClick) {
     el._msClick = true;
     el.on("plotly_click", function (ev) {
@@ -30,6 +40,16 @@ Shiny.addCustomMessageHandler("ms-plot", function (msg) {
     });
   }
 });
+
+// Plate map: size the well markers so the grid fills the plot without overlapping
+function fitWells(el) {
+  const fit = el._msFit, area = el._fullLayout && el._fullLayout._size;
+  if (!fit || !area) return;
+  const size = Math.max(4, Math.floor(0.82 * Math.min(area.w / fit.cols, area.h / fit.rows)));
+  if (size === el._msWellSize) return;
+  el._msWellSize = size;
+  Plotly.restyle(el, { "marker.size": size });
+}
 
 document.addEventListener("click", function (ev) {
   const th = ev.target.closest("table.ms-sortable th");
