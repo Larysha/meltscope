@@ -1,0 +1,58 @@
+<div style="max-width: 820px">
+<h4>How to analyse a plate</h4>
+<ol>
+  <li><b>Load data.</b> Upload the export straight from the instrument (no reformatting needed):
+    QuantStudio <i>Melt Curve Raw</i> data (.xlsx or .csv), or any table with a <code>Temperature</code> column
+    and one column per well (e.g. Bio-Rad CFX <i>Melt Curve RFU</i>). If the file holds several assays,
+    choose one under <i>Target</i>. Optionally upload sample names (download the template first).</li>
+  <li><b>Check the melt regions.</b> Open the <i>Raw data</i> tab. The blue band (pre-melt) and red band (post-melt)
+    should sit on flat stretches just before and just after the melt. MeltScope suggests them automatically;
+    drag the sliders to adjust.</li>
+  <li><b>Look at the Normalised and Difference plots.</b> Curves that group together have the same melting
+    behaviour. The difference plot subtracts a reference (by default the largest group) so that small
+    shape differences are easy to see.</li>
+  <li><b>Check the calls</b> on the <i>Plate &amp; calls</i> tab. Each well gets a variant and a confidence.
+    If you know how many genotypes to expect, set <i>Number of variants</i> instead of <i>Auto</i>.
+    Give the variants names (e.g. <code>WT, Het, Hom</code>) once you know which is which, for example
+    from control wells.</li>
+  <li><b>Remove bad wells</b> by clicking them on the plate map. Click again to put them back.</li>
+  <li><b>Export.</b> Use the camera icon above any plot (PNG or SVG; choose under <i>Plot appearance</i>),
+    and the download buttons on the <i>Results table</i> tab. Save your settings so the same analysis can be repeated later.</li>
+</ol>
+
+<h4>What the settings do</h4>
+<dl>
+  <dt>Pre-/post-melt regions</dt>
+  <dd>Each curve is scaled so that the pre-melt region is 100% and the post-melt region is 0%. A straight line
+    is fitted in each region, which removes the gradual background drift in fluorescence. This is the same approach as
+    Thermo Fisher HRM Software.</dd>
+  <dt>Smoothing</dt>
+  <dd>Reduces noise before taking the derivative. Heavy smoothing flattens sharp peaks and can shift Tm by a few
+    tenths of a degree; 0.4 matches the instrument's own Tm values closely.</dd>
+  <dt>Temperature shift</dt>
+  <dd>Slides every normalised curve left or right so they all cross the chosen fluorescence level at the same temperature.
+    This removes small well-to-well Tm offsets so differences in <i>shape</i> (typical of heterozygotes) stand out.
+    On by default, because heating-zone offsets of a tenth of a degree between plate columns are common and otherwise
+    blur the grouping (the example plate includes such offsets: try switching it off). Turn it off when variants differ
+    mainly by Tm, because shifting removes that difference.</dd>
+  <dt>Group wells by</dt>
+  <dd><i>Curve shape</i> uses the whole normalised curve between the two regions (recommended for genotyping).
+    <i>Tm only</i> groups by melting temperature.</dd>
+  <dt>Confidence</dt>
+  <dd>How clearly a well belongs to its group rather than the next closest one (100% = unambiguous).
+    Wells below the minimum are called <i>Unknown</i>.</dd>
+  <dt>Negative</dt>
+  <dd>Wells whose total fluorescence drop is much smaller than the plate median (e.g. NTCs, failed PCR). They are left
+    out of the normalised plots and the grouping.</dd>
+  <dt>Clustering check tab</dt>
+  <dd>Shows the wells as points (closer points = more similar curves) and how cleanly the plate splits into 2, 3, 4…
+    groups. Use it to sanity-check the number of variants.</dd>
+</dl>
+
+<h4>Good practice</h4>
+<ul>
+  <li>Include known controls for every genotype on each plate, and name the variants after them.</li>
+  <li>Compare samples only within one run and one assay: HRM is sensitive to salt, DNA concentration and plate position.</li>
+  <li>Treat calls as a guide; confirm unexpected or low-confidence wells by sequencing.</li>
+</ul>
+</div>

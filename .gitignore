@@ -1,0 +1,6 @@
+site/
+docs/
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
