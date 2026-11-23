@@ -200,7 +200,7 @@ temp_shift <- function(temp, N, threshold = 5, use = rep(TRUE, ncol(N)), region 
 # confidence (%) = posterior probability under spherical Gaussian clusters, and chosen k.
 # min_diff: in Auto mode, groups whose average curves differ by less than this (max
 # absolute difference, in the units of X: % fluorescence or degrees C) are not split.
-# first: logical, rows that are control wells; their group becomes variant 1.
+# first: logical, rows that are control wells; groups holding controls are numbered first.
 call_variants <- function(X, k = NA, method = c("hierarchical", "kmeans"), k_max = 6, min_diff = 0,
                           first = rep(FALSE, nrow(X))) {
   method <- match.arg(method)
@@ -235,9 +235,9 @@ call_variants <- function(X, k = NA, method = c("hierarchical", "kmeans"), k_max
   }
   k <- min(k, n)
   cl <- fit(k)
-  # Renumber so that variant 1 is the controls' group (if any), then by size
+  # Renumber: groups holding control wells first, then the rest; each by size
   ord <- as.integer(names(sort(table(cl), decreasing = TRUE)))
-  if (any(first)) ord <- unique(c(as.integer(names(which.max(table(cl[first])))), ord))
+  ord <- c(ord[ord %in% cl[first]], ord[!ord %in% cl[first]])
   cl <- match(cl, ord)
   centres <- do.call(rbind, lapply(seq_len(k), function(g) colMeans(X[cl == g, , drop = FALSE])))
   if (k == 1) {
@@ -258,7 +258,10 @@ call_variants <- function(X, k = NA, method = c("hierarchical", "kmeans"), k_max
 
 # p: list(spar, pre, post, shift, shift_thr, neg_pct, features, method, k, min_conf,
 #         min_diff_shape (%), min_diff_tm (degrees C))
+# controls: named character vector, well -> control name (e.g. c(G1 = "Ch WT")). Each group holding
+# control wells is named after them; the other groups are "Variant 1", "Variant 2", ...
 analyse <- function(m, p, exclude = character(), controls = character()) {
+  if (is.null(names(controls))) controls <- stats::setNames(rep("Control", length(controls)), controls)
   sm <- smooth_curves(m$temp, m$F, p$spar)
   reg <- m$temp >= p$pre[1] & m$temp <= p$post[2]  # Tm peaks only inside the analysis region
   tm <- find_tm(m$temp[reg], sm$D[reg, , drop = FALSE])
@@ -275,14 +278,23 @@ analyse <- function(m, p, exclude = character(), controls = character()) {
   sil <- NULL
   scores <- NULL
   k <- 0L
+  levels <- character()
   if (length(use)) {
     melt <- m$temp >= p$pre[2] & m$temp <= p$post[1]
     X <- if (p$features == "tm") tm[use, "Tm1", drop = FALSE] else t(N[melt, use, drop = FALSE])
     min_diff <- if (p$features == "tm") p$min_diff_tm else p$min_diff_shape
     cv <- call_variants(X, if (identical(p$k, "auto")) NA else as.integer(p$k), p$method, min_diff = min_diff %||% 0,
-                        first = use %in% controls)
+                        first = use %in% names(controls))
+    ctrl <- unname(controls[use])
+    levels <- vapply(seq_len(cv$k), function(v) {
+      l <- unique(ctrl[cv$variant == v & !is.na(ctrl)])
+      if (length(l)) paste(l, collapse = " / ") else NA_character_
+    }, "")
+    levels[is.na(levels)] <- paste("Variant", seq_len(sum(is.na(levels))))
+    n <- stats::ave(seq_along(levels), levels, FUN = seq_along)  # same control name in two groups
+    levels <- ifelse(n > 1, paste0(levels, " (", n, ")"), levels)
     i <- match(use, wells)
-    call[i] <- paste("Variant", cv$variant)
+    call[i] <- levels[cv$variant]
     conf[i] <- cv$confidence
     sil <- cv$silhouette
     scores <- cv$scores
@@ -294,7 +306,7 @@ analyse <- function(m, p, exclude = character(), controls = character()) {
   status[wells %in% exclude] <- "Excluded"
   call_lab <- ifelse(status == "Called", call, ifelse(status == "Low confidence", "Unknown", status))
   list(
-    temp = m$temp, F = m$F, S = sm$S, D = sm$D, N = N, k = k, silhouette = sil, scores = scores,
+    temp = m$temp, F = m$F, S = sm$S, D = sm$D, N = N, k = k, levels = levels, silhouette = sil, scores = scores,
     table = data.frame(Well = wells, Call = call_lab, Variant = call, Confidence = round(conf, 1),
                        Tm1 = round(tm[, "Tm1"], 2), Tm2 = round(tm[, "Tm2"], 2),
                        Amplitude = signif(amp, 3), Status = status, stringsAsFactors = FALSE)

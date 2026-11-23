@@ -15,10 +15,13 @@
     If you know how many genotypes to expect, set <i>Number of variants</i> instead of <i>Auto</i>.
     Give the variants names (e.g. <code>WT, Het, Hom</code>) once you know which is which, for example
     from control wells.</li>
-  <li><b>Mark control wells</b> (optional): above the plate map choose <i>mark it as a control</i>, then click
-    your reference wells (e.g. known wild type). They get a thick outline, their group becomes Variant 1
-    (named <i>Control</i> unless you give it a name), and the Difference plot uses their average as the 0 line.
-    If the controls end up in more than one group, the <i>Variants found</i> card warns you.</li>
+  <li><b>Mark control wells</b> (optional), like Task/Control in Thermo's HRM software: above the plate map choose
+    <i>mark it as a control</i>, type a name (e.g. <code>Ch WT</code>), then click those wells. Repeat with another
+    name for a second control (e.g. <code>MV WT</code>). Controls get a thick outline, each group holding controls is
+    named after them (the other groups are Variant 1, 2…), and the Difference plot can use any control as its 0 line;
+    a single well works as a reference. Controls can also come from a <code>Control</code> column in the sample names file.
+    If one control's wells end up in more than one group, the <i>Variants found</i> card warns you.</li>
+  <li><b>Hover over a curve or a well</b> to see its sample, call, confidence and Tm.</li>
   <li><b>Remove bad wells</b> by clicking them on the plate map. Click again to put them back.</li>
   <li><b>Export.</b> Use the camera icon above any plot (PNG or SVG; choose under <i>Plot appearance</i>),
     and the download buttons on the <i>Results table</i> tab. Save your settings so the same analysis can be repeated later.</li>

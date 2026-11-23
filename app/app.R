@@ -120,7 +120,8 @@ ui <- page_sidebar(
                  downloadLink("ex_wide", "wide, CSV"), "."),
         selectInput("target", "Target / assay", choices = NULL),
         fileInput("samples", "Sample names (optional)", accept = c(".csv", ".xlsx"), buttonLabel = "Upload…"),
-        help_tip("A table with a 'Well' and a 'Sample' column. ",
+        help_tip("A table with a 'Well' and a 'Sample' column, and optionally a 'Control' column naming control ",
+                 "wells (e.g. Ch WT; leave the others blank). ",
                  downloadLink("sample_template", "Download a template for this plate."))
       ),
       accordion_panel(
@@ -171,8 +172,8 @@ ui <- page_sidebar(
         help_tip("Wells below this are called 'Unknown'."),
         numericInput("neg_pct", "Call 'Negative' if signal < (% of median)", value = 20, min = 0, max = 100, step = 5),
         textInput("variant_names", "Variant names (optional)", placeholder = "e.g. WT, Het, Hom"),
-        help_tip("Comma-separated, in order Variant 1, 2, 3… Variant 1 is the group holding your control wells ",
-                 "(mark them on the plate map), otherwise the largest group.")
+        help_tip("Comma-separated, in order Variant 1, 2, 3… (Variant 1 = largest group). Groups holding control ",
+                 "wells are named after the controls instead (see the plate map).")
       ),
       accordion_panel(
         "5. Difference plot reference", icon = icon("crosshairs"),
@@ -209,9 +210,15 @@ ui <- page_sidebar(
              radioButtons("click_mode", NULL, inline = TRUE,
                           c("Click a well to exclude / include it" = "exclude",
                             "Click a well to mark it as a control" = "control")),
+             conditionalPanel("input.click_mode == 'control'",
+                              textInput("control_name", "Control name for the wells you click", "Control",
+                                        placeholder = "e.g. Ch WT"),
+                              help_tip("Each group holding control wells is named after them; the rest are ",
+                                       "Variant 1, 2… Click a control again to unmark it. Controls can also come ",
+                                       "from a 'Control' column in the sample names file.")),
              plot_div("plate", "380px"),
-             actionButton("clear_excl", "Include all wells again",
-                          class = "btn-sm btn-outline-secondary", width = "220px")),
+             div(actionButton("clear_excl", "Include all wells again", class = "btn-sm btn-outline-secondary"),
+                 actionButton("clear_ctrl", "Clear controls", class = "btn-sm btn-outline-secondary"))),
         card(card_header("Summary by call"), div(style = "overflow-x: auto;", tableOutput("summary")))
       )
     ),
@@ -299,6 +306,12 @@ server <- function(input, output, session) {
     }
     ok <- !is.na(tab[[sc]]) & nzchar(as.character(tab[[sc]]))
     rv$samples <- stats::setNames(as.character(tab[[sc]])[ok], trimws(tab[[wc]])[ok])
+    cc <- which(nm %in% c("control", "taskcontrol", "task"))[1]
+    if (!is.na(cc)) {
+      v <- trimws(as.character(tab[[cc]]))
+      ok <- !is.na(v) & !tolower(v) %in% c("", "unknown", "ntc", "no", "false", "na")
+      rv$controls <- stats::setNames(v[ok], trimws(tab[[wc]])[ok])
+    }
   })
 
   example_download <- function(path) downloadHandler(function() basename(path), function(file) file.copy(path, file))
@@ -310,7 +323,7 @@ server <- function(input, output, session) {
     filename = function() "sample_names_template.csv",
     content = function(file) {
       wells <- if (is.null(rv$long)) paste0(rep(LETTERS[1:8], each = 12), 1:12) else colnames(mat()$F)
-      utils::write.csv(data.frame(Well = wells, Sample = ""), file, row.names = FALSE)
+      utils::write.csv(data.frame(Well = wells, Sample = "", Control = ""), file, row.names = FALSE)
     }
   )
 
@@ -328,11 +341,7 @@ server <- function(input, output, session) {
   })
 
   # Results table with user-facing names
-  variant_names <- reactive({
-    nm <- trimws(strsplit(input$variant_names %||% "", ",")[[1]])
-    if (length(rv$controls) && (!length(nm) || !nzchar(nm[1]))) nm[1] <- "Control"
-    nm
-  })
+  variant_names <- reactive(trimws(strsplit(input$variant_names %||% "", ",")[[1]]))
 
   calls <- reactive({
     t <- res()$table
@@ -340,12 +349,13 @@ server <- function(input, output, session) {
     t$Call <- rename_variants(t$Call, variant_names())
     smp <- if (is.null(rv$samples)) NA else unname(rv$samples[t$Well])
     t$Sample <- ifelse(is.na(smp), "", smp)
-    t$Control <- ifelse(t$Well %in% rv$controls, "yes", "")
+    ctrl <- unname(rv$controls[t$Well])
+    t$Control <- ifelse(is.na(ctrl), "", ctrl)
     t[c("Well", "Sample", "Control", "Call", "Confidence", "Tm1", "Tm2", "Variant", "Amplitude", "Status")]
   })
 
   # Variant 1, 2, ... in order (Variant 1 = largest group), with user names applied
-  variant_levels <- reactive(rename_variants(paste("Variant", seq_len(res()$k)), variant_names()))
+  variant_levels <- reactive(rename_variants(res()$levels, variant_names()))
 
   call_colours <- reactive({
     v <- variant_levels()
@@ -356,12 +366,13 @@ server <- function(input, output, session) {
   had_controls <- FALSE
   observe({
     v <- variant_levels()
-    ctrl <- length(rv$controls) > 0
-    ch <- c(if (ctrl) c("Control wells" = "__controls"),
+    cn <- unique(unname(rv$controls))
+    ctrl <- length(cn) > 0
+    ch <- c(stats::setNames(paste0("__ctrl:", cn), paste(cn, "control wells")),
             stats::setNames(v, paste0(v, if (length(v) && !ctrl) c(" (largest group)", rep("", length(v) - 1)))),
             "All analysed wells" = "__mean", "Choose wells…" = "__wells")
     sel <- isolate(input$ref)
-    if (ctrl && !had_controls) sel <- "__controls"
+    if (ctrl && !had_controls) sel <- ch[1]
     had_controls <<- ctrl
     updateSelectInput(session, "ref", choices = ch, selected = if (!is.null(sel) && sel %in% ch) sel else ch[1])
   })
@@ -374,16 +385,33 @@ server <- function(input, output, session) {
   observeEvent(input$plate_click, {
     w <- input$plate_click
     req(length(w) == 1, w %in% colnames(mat()$F))
-    toggle <- function(x) if (w %in% x) setdiff(x, w) else c(x, w)
-    if (identical(input$click_mode, "control")) rv$controls <- toggle(rv$controls)
-    else rv$excluded <- toggle(rv$excluded)
+    if (identical(input$click_mode, "control")) {
+      name <- trimws(input$control_name %||% "")
+      if (!nzchar(name)) name <- "Control"
+      # clicking a control again unmarks it; clicking it with a different name renames it
+      if (identical(unname(rv$controls[w]), name)) rv$controls <- rv$controls[names(rv$controls) != w]
+      else rv$controls[w] <- name
+    } else {
+      rv$excluded <- if (w %in% rv$excluded) setdiff(rv$excluded, w) else c(rv$excluded, w)
+    }
   })
   observeEvent(input$clear_excl, rv$excluded <- character())
+  observeEvent(input$clear_ctrl, rv$controls <- character())
 
   # ---- Plot helpers
   labels <- reactive({
     t <- calls()
     stats::setNames(ifelse(nzchar(t$Sample), paste0(t$Well, " · ", t$Sample), t$Well), t$Well)
+  })
+
+  # Hover text for a well (plate map and curves): name, call, confidence, Tm, control
+  well_info <- reactive({
+    t <- calls()
+    stats::setNames(paste0(
+      "<b>", labels()[t$Well], "</b><br>", t$Call,
+      ifelse(is.na(t$Confidence), "", sprintf(" (%.0f%% confidence)", t$Confidence)),
+      ifelse(is.na(t$Tm1), "", paste0("<br>Tm1 ", t$Tm1, " °C")), ifelse(is.na(t$Tm2), "", paste0(" · Tm2 ", t$Tm2, " °C")),
+      ifelse(nzchar(t$Control), paste0("<br>Control: ", t$Control), "")), t$Well)
   })
 
   # Named vector well -> group used for colouring, plus colours per group
@@ -438,7 +466,7 @@ server <- function(input, output, session) {
     validate(need(length(wells), "No wells to show (all excluded or negative)."))
     cg <- colouring()
     grp <- cg$group[wells]
-    lab <- labels()
+    lab <- well_info()
     groups <- unique(grp[order(match(grp, names(cg$cols)))])
     traces <- lapply(groups, function(g) {
       w <- wells[grp == g]
@@ -446,7 +474,7 @@ server <- function(input, output, session) {
            x = I(rep(c(round(x, 3), NA), length(w))),
            y = I(signif(as.vector(rbind(M[, w, drop = FALSE], NA)), 6)),
            text = I(rep(unname(lab[w]), each = length(x) + 1)),
-           hovertemplate = "<b>%{text}</b><br>%{x:.2f} °C<br>%{y:.4g}<extra>%{fullData.name}</extra>",
+           hovertemplate = "%{text}<br>%{x:.2f} °C · %{y:.4g}<extra></extra>",
            line = list(color = unname(cg$cols[g]), width = input$lw), connectgaps = FALSE)
     })
     fig(traces, list(
@@ -487,11 +515,11 @@ server <- function(input, output, session) {
         stat_card("data", "Data", rv$name, sprintf("%d wells · target %s", nrow(t), input$target), "data.svg",
                   small = TRUE),
         stat_card("variants", "Variants found", res()$k, {
-          ctrl <- t[t$Control == "yes" & !is.na(t$Variant), ]
-          n_grp <- length(unique(ctrl$Variant))
+          ctrl <- t[nzchar(t$Control) & !is.na(t$Variant), ]
+          split <- names(which(tapply(ctrl$Variant, ctrl$Control, function(v) length(unique(v))) > 1))
           paste0(sprintf("%d wells called", sum(t$Status == "Called")),
-                 if (n_grp > 1) sprintf(" · controls split across %d groups!", n_grp)
-                 else if (n_grp == 1) sprintf(" · %d controls", nrow(ctrl)))
+                 if (length(split)) sprintf(" · %s controls split across groups!", paste(split, collapse = ", "))
+                 else if (nrow(ctrl)) sprintf(" · %d controls", nrow(ctrl)))
         }, "variants.svg"),
         stat_card("look", "Need a look", sum(t$Status %in% c("Low confidence", "Negative")),
                   sprintf("%d unknown · %d negative · %d excluded", sum(t$Status == "Low confidence"),
@@ -507,15 +535,14 @@ server <- function(input, output, session) {
     nc <- if (big) 24 else 12
     grid <- expand.grid(r = seq_len(nr), c = seq_len(nc))
     cc <- call_colours()
-    hover <- sprintf("<b>%s</b><br>%s%s<br>Tm %s °C", labels()[t$Well], t$Call,
-                     ifelse(is.na(t$Confidence), "", sprintf(" (%.0f%%)", t$Confidence)), t$Tm1)
+    hover <- unname(well_info()[t$Well])
     sz <- 10  # starting size; www/meltscope.js resizes wells to the available space
     empty <- list(type = "scatter", mode = "markers", x = I(grid$c), y = I(grid$r), hoverinfo = "skip",
                   showlegend = FALSE,
                   marker = list(size = sz, color = "white", line = list(color = "#d0d0d0", width = 1)))
     wells <- lapply(intersect(names(cc), unique(t$Call)), function(g) {
       i <- which(t$Call == g)
-      ctrl <- t$Control[i] == "yes"
+      ctrl <- nzchar(t$Control[i])
       list(type = "scatter", mode = "markers", name = g, x = I(cols[i]), y = I(rows[i]),
            customdata = I(t$Well[i]), text = I(hover[i]), hovertemplate = "%{text}<extra></extra>",
            marker = list(size = sz, color = cc[[g]], symbol = if (g == "Excluded") "x" else "circle",
@@ -602,9 +629,10 @@ server <- function(input, output, session) {
     req(input$ref)
     w <- switch(input$ref,
                 "__mean" = analysed(),
-                "__controls" = intersect(rv$controls, analysed()),
                 "__wells" = input$ref_wells,
-                t$Well[t$Call == input$ref])
+                if (startsWith(input$ref, "__ctrl:"))
+                  intersect(names(rv$controls)[rv$controls == sub("^__ctrl:", "", input$ref)], analysed())
+                else t$Well[t$Call == input$ref])
     if (!length(w)) w <- analysed()
     rowMeans(r$N[, w, drop = FALSE])
   })
@@ -613,8 +641,8 @@ server <- function(input, output, session) {
     req(input$ref)
     r <- res()
     i <- in_region()
-    lab <- switch(input$ref, "__wells" = "selected wells", "__mean" = "all wells", "__controls" = "control wells",
-                  input$ref)
+    lab <- switch(input$ref, "__wells" = "selected wells", "__mean" = "all wells",
+                  sub("^__ctrl:(.*)", "\\1 control wells", input$ref))
     curve_plot(r$temp[i], (r$N - ref_curve())[i, , drop = FALSE], analysed(),
                paste0("Difference from ", lab, " (%)"), "difference",
                shapes = list(list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = 0, y1 = 0,
@@ -718,7 +746,7 @@ server <- function(input, output, session) {
     content = function(file) {
       s <- lapply(stats::setNames(setting_ids, setting_ids), function(id) input[[id]])
       s$excluded_wells <- rv$excluded
-      s$control_wells <- rv$controls
+      s$control_wells <- as.list(rv$controls)  # {"G1": "Ch WT", ...}
       s$data_file <- rv$name
       s$target <- input$target
       jsonlite::write_json(s, file, auto_unbox = TRUE, pretty = TRUE, null = "null")
@@ -736,7 +764,8 @@ server <- function(input, output, session) {
     if (!is.null(s$variant_names)) updateTextInput(session, "variant_names", value = s$variant_names)
     if (!is.null(s$ref_wells)) updateSelectizeInput(session, "ref_wells", selected = s$ref_wells)
     rv$excluded <- as.character(unlist(s$excluded_wells))
-    rv$controls <- as.character(unlist(s$control_wells))
+    ctrl <- unlist(s$control_wells)
+    rv$controls <- if (is.null(names(ctrl))) stats::setNames(rep("Control", length(ctrl)), ctrl) else ctrl
     showNotification("Settings loaded.", type = "message")
   })
 }

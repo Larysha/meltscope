@@ -36,9 +36,18 @@ stopifnot(r$k == 2,
 r_shift <- analyse(m, modifyList(p, list(shift = TRUE, pre = c(74, 75), post = c(90, 91))))
 stopifnot(r_shift$k == 1)
 
-# Control wells: their group becomes Variant 1 even though it is the smaller group
+# Control wells: their group is named after them (and listed first, though it is the smaller group);
+# the rest are numbered from Variant 1
 r_ctrl <- analyse(m, p, controls = c("B1", "B2"))
-stopifnot(r_ctrl$table["B1", "Variant"] == "Variant 1", r_ctrl$table["A1", "Variant"] == "Variant 2")
+stopifnot(r_ctrl$table["B1", "Variant"] == "Control", r_ctrl$table["B4", "Variant"] == "Control",
+          r_ctrl$table["A1", "Variant"] == "Variant 1", identical(r_ctrl$levels, c("Control", "Variant 1")))
+# Two named controls, as in Thermo's Task/Control (e.g. Ch WT, MV WT)
+r_two <- analyse(m, p, controls = c(A1 = "Ch WT", B1 = "MV WT"))
+stopifnot(identical(r_two$levels, c("Ch WT", "MV WT")), r_two$table["A6", "Variant"] == "Ch WT",
+          r_two$table["B3", "Variant"] == "MV WT")
+# Same name in two different groups: kept apart rather than merged
+r_split <- analyse(m, p, controls = c(A1 = "WT", B1 = "WT"))
+stopifnot(identical(r_split$levels, c("WT", "WT (2)")))
 
 # Exclusion
 stopifnot(analyse(m, p, exclude = "A1")$table["A1", "Status"] == "Excluded")
