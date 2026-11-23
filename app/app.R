@@ -18,8 +18,14 @@ EXAMPLE <- "example/example_plate_long.xlsx"          # synthetic plate, see too
 EXAMPLE_SAMPLES <- "example/example_sample_names.csv"
 FIXED_COLS <- c(Unknown = "#3b3b3b", Negative = "#b5b5b5", Excluded = "#e3e3e3")
 
+# Hand-picked palettes (no pale colours, which vanish on white); stretched if more groups than colours
+CUSTOM_PALETTES <- list(
+  "Orchid" = c("#6f3a9e", "#2aa9a4", "#d94f8f", "#3b2768", "#e889b6", "#1b6d76", "#b56fd6", "#87d0c8")
+)
+
 palette_for <- function(n, name) {
   if (n == 0) return(character())
+  if (name %in% names(CUSTOM_PALETTES)) return(grDevices::colorRampPalette(CUSTOM_PALETTES[[name]])(max(n, 8))[seq_len(n)])
   if (name == "Okabe-Ito" && n <= 7) {
     okabe <- grDevices::palette.colors(9, "Okabe-Ito")[c(6, 7, 4, 2, 3, 8, 5)]  # no black/grey (used for Unknown etc.)
     return(unname(okabe[seq_len(n)]))
@@ -37,8 +43,8 @@ help_tip <- function(...) tags$small(class = "text-muted d-block mb-3", ...)
 
 # Summary card above the tabs; cards wrap onto new rows on narrow screens
 # Clicking one sets input$stat_click to its id; the server opens a pop-up with the details
-stat_card <- function(id, title, value, detail, icon, primary = FALSE, small = FALSE) {
-  tags$button(type = "button", class = paste("ms-stat", if (primary) "ms-stat-primary"),
+stat_card <- function(id, title, value, detail, icon, small = FALSE) {
+  tags$button(type = "button", class = "ms-stat",
       onclick = sprintf("Shiny.setInputValue('stat_click', '%s', {priority: 'event'})", id),
       tags$img(src = file.path("icons", icon), class = "ms-stat-icon", alt = ""),
       div(class = "ms-stat-body",
@@ -77,13 +83,13 @@ page_head <- tags$head(
     #summary td { white-space: nowrap; }
     .ms-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .75rem;
                 margin-bottom: 1rem; }
-    .ms-stat { border: 1px solid #dee2e6; border-radius: .5rem; padding: .6rem .9rem; background: #fff; min-width: 0;
-               display: flex; align-items: center; gap: .75rem; width: 100%; text-align: left; color: inherit;
+    .ms-stat { border: 1px solid transparent; border-radius: .5rem; padding: .6rem .9rem; min-width: 0;
+               background: rgba(42,169,164,.14); color: #123f4c;
+               display: flex; align-items: center; gap: .75rem; width: 100%; text-align: left;
                font: inherit; cursor: pointer; transition: box-shadow .15s, transform .15s; }
     .ms-stat:hover, .ms-stat:focus-visible { box-shadow: 0 .25rem .75rem rgba(0,0,0,.12); transform: translateY(-1px); }
     .ms-stat-icon { width: 40px; height: 40px; flex-shrink: 0; }
     .ms-stat-body { min-width: 0; }
-    .ms-stat-primary { background: #1f6f8b; border-color: #1f6f8b; color: #fff; }
     .ms-stat-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; opacity: .75; }
     .ms-stat-value { font-size: 1.6rem; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
     .ms-stat-value.small { font-size: 1rem; padding: .3rem 0; }
@@ -177,7 +183,7 @@ ui <- page_sidebar(
         "Plot appearance", icon = icon("palette"),
         selectInput("colour_by", "Colour curves by", c("Call" = "call", "Sample" = "sample", "Well" = "well")),
         selectInput("palette", "Colours",
-                    c("Okabe-Ito (colour-blind safe)" = "Okabe-Ito", "Dark 3", "Set 2", "Viridis", "Zissou 1")),
+                    c("Okabe-Ito (colour-blind safe)" = "Okabe-Ito", "Orchid", "Dark 3", "Set 2", "Viridis", "Zissou 1")),
         sliderInput("lw", "Line width", min = 0.5, max = 4, value = 1.5, step = 0.25),
         sliderInput("font", "Text size", min = 10, max = 22, value = 14, step = 1),
         radioButtons("img_fmt", "Camera button saves as",
@@ -463,8 +469,7 @@ server <- function(input, output, session) {
     div(class = "ms-stats",
         stat_card("data", "Data", rv$name, sprintf("%d wells · target %s", nrow(t), input$target), "data.svg",
                   small = TRUE),
-        stat_card("variants", "Variants found", res()$k, sprintf("%d wells called", sum(t$Status == "Called")), "variants.svg",
-                  primary = TRUE),
+        stat_card("variants", "Variants found", res()$k, sprintf("%d wells called", sum(t$Status == "Called")), "variants.svg"),
         stat_card("look", "Need a look", sum(t$Status %in% c("Low confidence", "Negative")),
                   sprintf("%d unknown · %d negative · %d excluded", sum(t$Status == "Low confidence"),
                           sum(t$Status == "Negative"), sum(t$Status == "Excluded")), "look.svg"))
