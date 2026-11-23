@@ -108,8 +108,8 @@ maths follow the published HRM methods:
 - Palais R, Wittwer CT (2009). Mathematical algorithms for high-resolution DNA melting analysis. *Methods in
   Enzymology* 454:323–343. [PubMed 19216933](https://pubmed.ncbi.nlm.nih.gov/19216933/)
 
-MeltScope is an independent, open-source alternative. It is not affiliated with or endorsed by Thermo Fisher
-Scientific, and its algorithms (smoothing, clustering, confidence scores) are its own. Results will be close to, but
-not identical with, those from commercial HRM software, so validate calls with known controls.
+Much of MeltScope's workflow is inspired by Thermo Fisher's HRM software, but the algorithms behind it (smoothing,
+clustering, confidence scores) are different. Results should be close to Thermo's, but not identical, so check your
+calls against known controls.
 
 Developed by Larysha Rothmann. Released under the [MIT licence](LICENSE).

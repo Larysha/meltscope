@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="title">
+  <title id="title">Data</title>
+  <g stroke="#2B2D42" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- cylinder body -->
+    <path d="M14 12 V50 A18 6 0 0 0 50 50 V12 Z" fill="#7FD1C7"/>
+    <!-- band -->
+    <path d="M14 22 A18 6 0 0 0 50 22" fill="none"/>
+    <!-- lid -->
+    <ellipse cx="32" cy="12" rx="18" ry="6" fill="#B5E8E1"/>
+  </g>
+  <!-- face -->
+  <circle cx="20.5" cy="42" r="2.3" fill="#F7A1B5" opacity="0.85"/>
+  <circle cx="43.5" cy="42" r="2.3" fill="#F7A1B5" opacity="0.85"/>
+  <circle cx="26" cy="37" r="2.3" fill="#2B2D42"/>
+  <circle cx="38" cy="37" r="2.3" fill="#2B2D42"/>
+  <path d="M28.5 42.5 Q32 46 35.5 42.5" fill="none" stroke="#2B2D42" stroke-width="2" stroke-linecap="round"/>
+</svg>

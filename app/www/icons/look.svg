@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="title">
+  <title id="title">Needs a look</title>
+  <!-- rounded warning triangle -->
+  <path d="M29.04 14.22 Q32 9 34.96 14.22 L54.04 47.78 Q57 53 51 53 L13 53 Q7 53 9.96 47.78 Z"
+        fill="#FFC857" stroke="#2B2D42" stroke-width="2" stroke-linejoin="round"/>
+  <!-- cheeks -->
+  <circle cx="18.5" cy="47" r="2.2" fill="#F7A1B5" opacity="0.85"/>
+  <circle cx="45.5" cy="47" r="2.2" fill="#F7A1B5" opacity="0.85"/>
+  <!-- side-eye -->
+  <g stroke="#2B2D42" stroke-width="1.8">
+    <ellipse cx="25" cy="38.5" rx="5" ry="5.5" fill="#FFFFFF"/>
+    <ellipse cx="39" cy="38.5" rx="5" ry="5.5" fill="#FFFFFF"/>
+  </g>
+  <circle cx="27.4" cy="37.6" r="2.6" fill="#2B2D42"/>
+  <circle cx="41.4" cy="37.6" r="2.6" fill="#2B2D42"/>
+  <!-- hmm mouth -->
+  <path d="M29.5 48.5 H34.5" stroke="#2B2D42" stroke-width="1.8" stroke-linecap="round"/>
+</svg>

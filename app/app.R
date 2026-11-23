@@ -36,11 +36,13 @@ rename_variants <- function(x, nm) {
 help_tip <- function(...) tags$small(class = "text-muted d-block mb-3", ...)
 
 # Summary card above the tabs; cards wrap onto new rows on narrow screens
-stat_card <- function(title, value, detail, primary = FALSE, small = FALSE) {
+stat_card <- function(title, value, detail, icon, primary = FALSE, small = FALSE) {
   div(class = paste("ms-stat", if (primary) "ms-stat-primary"),
-      div(class = "ms-stat-title", title),
-      div(class = paste("ms-stat-value", if (small) "small"), value),
-      div(class = "ms-stat-detail", detail))
+      tags$img(src = file.path("icons", icon), class = "ms-stat-icon", alt = ""),
+      div(class = "ms-stat-body",
+          div(class = "ms-stat-title", title),
+          div(class = paste("ms-stat-value", if (small) "small"), value),
+          div(class = "ms-stat-detail", detail)))
 }
 
 # Side by side on wide screens, stacked on laptops/tablets
@@ -60,7 +62,10 @@ page_head <- tags$head(
     #summary td { white-space: nowrap; }
     .ms-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .75rem;
                 margin-bottom: 1rem; }
-    .ms-stat { border: 1px solid #dee2e6; border-radius: .5rem; padding: .6rem .9rem; background: #fff; min-width: 0; }
+    .ms-stat { border: 1px solid #dee2e6; border-radius: .5rem; padding: .6rem .9rem; background: #fff; min-width: 0;
+               display: flex; align-items: center; gap: .75rem; }
+    .ms-stat-icon { width: 40px; height: 40px; flex-shrink: 0; }
+    .ms-stat-body { min-width: 0; }
     .ms-stat-primary { background: #1f6f8b; border-color: #1f6f8b; color: #fff; }
     .ms-stat-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; opacity: .75; }
     .ms-stat-value { font-size: 1.6rem; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
@@ -439,11 +444,13 @@ server <- function(input, output, session) {
     }
     t <- calls()
     div(class = "ms-stats",
-        stat_card("Data", rv$name, sprintf("%d wells · target %s", nrow(t), input$target), small = TRUE),
-        stat_card("Variants found", res()$k, sprintf("%d wells called", sum(t$Status == "Called")), primary = TRUE),
+        stat_card("Data", rv$name, sprintf("%d wells · target %s", nrow(t), input$target), "data.svg",
+                  small = TRUE),
+        stat_card("Variants found", res()$k, sprintf("%d wells called", sum(t$Status == "Called")), "variants.svg",
+                  primary = TRUE),
         stat_card("Need a look", sum(t$Status %in% c("Low confidence", "Negative")),
                   sprintf("%d unknown · %d negative · %d excluded", sum(t$Status == "Low confidence"),
-                          sum(t$Status == "Negative"), sum(t$Status == "Excluded"))))
+                          sum(t$Status == "Negative"), sum(t$Status == "Excluded")), "look.svg"))
   })
 
   render_fig("plate", "Plate & calls", click_input = "plate_click", {
