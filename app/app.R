@@ -36,13 +36,28 @@ rename_variants <- function(x, nm) {
 help_tip <- function(...) tags$small(class = "text-muted d-block mb-3", ...)
 
 # Summary card above the tabs; cards wrap onto new rows on narrow screens
-stat_card <- function(title, value, detail, icon, primary = FALSE, small = FALSE) {
-  div(class = paste("ms-stat", if (primary) "ms-stat-primary"),
+# Clicking one sets input$stat_click to its id; the server opens a pop-up with the details
+stat_card <- function(id, title, value, detail, icon, primary = FALSE, small = FALSE) {
+  tags$button(type = "button", class = paste("ms-stat", if (primary) "ms-stat-primary"),
+      onclick = sprintf("Shiny.setInputValue('stat_click', '%s', {priority: 'event'})", id),
       tags$img(src = file.path("icons", icon), class = "ms-stat-icon", alt = ""),
       div(class = "ms-stat-body",
           div(class = "ms-stat-title", title),
           div(class = paste("ms-stat-value", if (small) "small"), value),
           div(class = "ms-stat-detail", detail)))
+}
+
+# Plain HTML table; click a column header to sort (www/meltscope.js). tint colours the Call column.
+html_table <- function(t, tint = NULL) {
+  rows <- lapply(seq_len(nrow(t)), function(i) {
+    tags$tr(lapply(names(t), function(col) {
+      v <- t[[col]][i]
+      tags$td(style = if (col == "Call" && !is.null(tint)) paste0("background:", tint[i]),
+              if (is.na(v)) "" else as.character(v))
+    }))
+  })
+  tags$table(class = "table table-sm table-hover ms-sortable",
+             tags$thead(tags$tr(lapply(names(t), tags$th))), tags$tbody(rows))
 }
 
 # Side by side on wide screens, stacked on laptops/tablets
@@ -63,7 +78,9 @@ page_head <- tags$head(
     .ms-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .75rem;
                 margin-bottom: 1rem; }
     .ms-stat { border: 1px solid #dee2e6; border-radius: .5rem; padding: .6rem .9rem; background: #fff; min-width: 0;
-               display: flex; align-items: center; gap: .75rem; }
+               display: flex; align-items: center; gap: .75rem; width: 100%; text-align: left; color: inherit;
+               font: inherit; cursor: pointer; transition: box-shadow .15s, transform .15s; }
+    .ms-stat:hover, .ms-stat:focus-visible { box-shadow: 0 .25rem .75rem rgba(0,0,0,.12); transform: translateY(-1px); }
     .ms-stat-icon { width: 40px; height: 40px; flex-shrink: 0; }
     .ms-stat-body { min-width: 0; }
     .ms-stat-primary { background: #1f6f8b; border-color: #1f6f8b; color: #fff; }
@@ -444,11 +461,11 @@ server <- function(input, output, session) {
     }
     t <- calls()
     div(class = "ms-stats",
-        stat_card("Data", rv$name, sprintf("%d wells · target %s", nrow(t), input$target), "data.svg",
+        stat_card("data", "Data", rv$name, sprintf("%d wells · target %s", nrow(t), input$target), "data.svg",
                   small = TRUE),
-        stat_card("Variants found", res()$k, sprintf("%d wells called", sum(t$Status == "Called")), "variants.svg",
+        stat_card("variants", "Variants found", res()$k, sprintf("%d wells called", sum(t$Status == "Called")), "variants.svg",
                   primary = TRUE),
-        stat_card("Need a look", sum(t$Status %in% c("Low confidence", "Negative")),
+        stat_card("look", "Need a look", sum(t$Status %in% c("Low confidence", "Negative")),
                   sprintf("%d unknown · %d negative · %d excluded", sum(t$Status == "Low confidence"),
                           sum(t$Status == "Negative"), sum(t$Status == "Excluded")), "look.svg"))
   })
@@ -485,7 +502,7 @@ server <- function(input, output, session) {
     c(plate, list(fitWells = list(rows = nr, cols = nc)))  # browser resizes wells to fit the plot
   })
 
-  output$summary <- renderTable({
+  summary_by_call <- reactive({
     t <- calls()
     t <- t[!t$Status %in% c("Excluded"), ]
     groups <- split(t, factor(t$Call, levels = intersect(names(call_colours()), t$Call)))
@@ -498,7 +515,45 @@ server <- function(input, output, session) {
         check.names = FALSE
       )
     }))
-  }, striped = TRUE, width = "100%")
+  })
+  output$summary <- renderTable(summary_by_call(), striped = TRUE, width = "100%")
+
+  # Pop-ups behind the summary cards
+  observeEvent(input$stat_click, {
+    t <- calls()
+    tint <- function(t) paste0(call_colours()[t$Call], "55")
+    scroll <- function(x) div(style = "max-height: 60vh; overflow: auto;", x)
+    dlg <- switch(input$stat_click,
+      data = {
+        m <- mat()
+        d <- data.frame(Temperature = m$temp, m$F, check.names = FALSE)
+        d[] <- lapply(d, round, 2)
+        modalDialog(title = paste("Data:", rv$name), size = "xl", easyClose = TRUE,
+                    p(sprintf("Target %s · %d wells · %d readings from %.1f to %.1f °C. First 20 readings:",
+                              input$target, ncol(m$F), length(m$temp), min(m$temp), max(m$temp))),
+                    scroll(html_table(utils::head(d, 20))))
+      },
+      variants = modalDialog(title = sprintf("%d variants found", res()$k), size = "l", easyClose = TRUE,
+                             html_table(summary_by_call()),
+                             footer = tagList(actionButton("go_results", "Open full results table"),
+                                              modalButton("Close"))),
+      look = {
+        look <- c("Low confidence", "Negative", "Excluded")
+        t <- t[t$Status %in% look, ]
+        t <- t[order(match(t$Status, look), t$Confidence), ]
+        modalDialog(title = sprintf("%d wells need a look", nrow(t)), size = "l", easyClose = TRUE,
+                    if (nrow(t)) tagList(
+                      help_tip("Unknown = no confident call; Negative = little or no melt signal; ",
+                               "Excluded = removed by you. Click a well on the plate map to exclude or include it."),
+                      scroll(html_table(t, tint(t))))
+                    else p("Nothing to check: every well got a confident call and none are excluded."))
+      })
+    showModal(dlg)
+  })
+  observeEvent(input$go_results, {
+    removeModal()
+    nav_select("tabs", "Results table")
+  })
 
   render_fig("p_raw", "Raw data", {
     r <- res()
@@ -557,20 +612,9 @@ server <- function(input, output, session) {
     }
   })
 
-  # Plain HTML table; click a column header to sort (www/meltscope.js)
   output$results <- renderUI({
     t <- calls()
-    tint <- paste0(call_colours()[t$Call], "55")
-    rows <- lapply(seq_len(nrow(t)), function(i) {
-      cells <- lapply(names(t), function(col) {
-        v <- t[[col]][i]
-        v <- if (is.na(v)) "" else as.character(v)
-        if (col == "Call") tags$td(style = paste0("background:", tint[i]), v) else tags$td(v)
-      })
-      tags$tr(cells)
-    })
-    tags$table(class = "table table-sm table-hover ms-sortable",
-               tags$thead(tags$tr(lapply(names(t), tags$th))), tags$tbody(rows))
+    html_table(t, paste0(call_colours()[t$Call], "55"))
   })
 
   output$dl_results <- downloadHandler(
