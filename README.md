@@ -90,7 +90,7 @@ The **Help** tab in the app explains every setting.
 | Curves look jagged in the derivative plot | Increase *Smoothing* a little (this can shift Tm slightly; see Help). |
 | A well is called *Negative* | Its fluorescence barely changed (e.g. NTC or failed PCR). Lower the *Negative* threshold if that is wrong. |
 | Browser version slow to start | The first visit downloads the analysis engine (about 40 MB), so it can take a few minutes on a slow connection; later visits are much faster. Use Chrome, Edge or Firefox, or Option B. |
-| Very slow or never loads in Firefox | Privacy extensions (e.g. Privacy Badger, uBlock Origin) can block the background script the app needs. Turn the extension off for this site (Privacy Badger: click its icon → *Disable for this site*), switch off Enhanced Tracking Protection for the site (shield icon left of the address bar), and don't use a private window. Or open the app in Chrome or Edge. |
+| Very slow or never loads | Privacy and ad-blocking extensions (e.g. Privacy Badger, uBlock Origin) can block the background script the app needs, in any browser. Turn the extension off for this site (Privacy Badger: click its icon → *Disable for this site*) and reload. In Firefox, also switch off Enhanced Tracking Protection for the site (shield icon left of the address bar) and don't use a private window. Or use Option B. |
 
 ---
 
