@@ -9,12 +9,16 @@
     should sit on flat stretches just before and just after the melt. MeltScope suggests them automatically;
     drag the sliders to adjust.</li>
   <li><b>Look at the Normalised and Difference plots.</b> Curves that group together have the same melting
-    behaviour. The difference plot subtracts a reference (by default the largest group) so that small
-    shape differences are easy to see.</li>
+    behaviour. The difference plot subtracts a reference (your control wells if you marked any, otherwise the largest
+    group) so that small shape differences are easy to see.</li>
   <li><b>Check the calls</b> on the <i>Plate &amp; calls</i> tab. Each well gets a variant and a confidence.
     If you know how many genotypes to expect, set <i>Number of variants</i> instead of <i>Auto</i>.
     Give the variants names (e.g. <code>WT, Het, Hom</code>) once you know which is which, for example
     from control wells.</li>
+  <li><b>Mark control wells</b> (optional): above the plate map choose <i>mark it as a control</i>, then click
+    your reference wells (e.g. known wild type). They get a thick outline, their group becomes Variant 1
+    (named <i>Control</i> unless you give it a name), and the Difference plot uses their average as the 0 line.
+    If the controls end up in more than one group, the <i>Variants found</i> card warns you.</li>
   <li><b>Remove bad wells</b> by clicking them on the plate map. Click again to put them back.</li>
   <li><b>Export.</b> Use the camera icon above any plot (PNG or SVG; choose under <i>Plot appearance</i>),
     and the download buttons on the <i>Results table</i> tab. Save your settings so the same analysis can be repeated later.</li>

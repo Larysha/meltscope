@@ -36,6 +36,10 @@ stopifnot(r$k == 2,
 r_shift <- analyse(m, modifyList(p, list(shift = TRUE, pre = c(74, 75), post = c(90, 91))))
 stopifnot(r_shift$k == 1)
 
+# Control wells: their group becomes Variant 1 even though it is the smaller group
+r_ctrl <- analyse(m, p, controls = c("B1", "B2"))
+stopifnot(r_ctrl$table["B1", "Variant"] == "Variant 1", r_ctrl$table["A1", "Variant"] == "Variant 2")
+
 # Exclusion
 stopifnot(analyse(m, p, exclude = "A1")$table["A1", "Status"] == "Excluded")
 

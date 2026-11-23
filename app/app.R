@@ -171,7 +171,8 @@ ui <- page_sidebar(
         help_tip("Wells below this are called 'Unknown'."),
         numericInput("neg_pct", "Call 'Negative' if signal < (% of median)", value = 20, min = 0, max = 100, step = 5),
         textInput("variant_names", "Variant names (optional)", placeholder = "e.g. WT, Het, Hom"),
-        help_tip("Comma-separated, in order Variant 1, 2, 3… (Variant 1 = largest group).")
+        help_tip("Comma-separated, in order Variant 1, 2, 3… Variant 1 is the group holding your control wells ",
+                 "(mark them on the plate map), otherwise the largest group.")
       ),
       accordion_panel(
         "5. Difference plot reference", icon = icon("crosshairs"),
@@ -193,7 +194,7 @@ ui <- page_sidebar(
         "Save / load settings", icon = icon("floppy-disk"),
         downloadButton("save_settings", "Save settings", class = "btn-sm w-100 mb-2"),
         fileInput("load_settings", NULL, accept = ".json", buttonLabel = "Load settings…"),
-        help_tip("Saves every setting above plus excluded wells, so an analysis can be repeated exactly. ",
+        help_tip("Saves every setting above plus excluded and control wells, so an analysis can be repeated exactly. ",
                  "Load data first.")
       )
     )
@@ -204,7 +205,10 @@ ui <- page_sidebar(
     nav_panel(
       "Plate & calls",
       two_columns(
-        card(card_header("Plate map", tags$small(class = "text-muted ms-2", "click a well to exclude / include it")),
+        card(card_header("Plate map", tags$small(class = "text-muted ms-2", "thick outline = control well")),
+             radioButtons("click_mode", NULL, inline = TRUE,
+                          c("Click a well to exclude / include it" = "exclude",
+                            "Click a well to mark it as a control" = "control")),
              plot_div("plate", "380px"),
              actionButton("clear_excl", "Include all wells again",
                           class = "btn-sm btn-outline-secondary", width = "220px")),
@@ -245,7 +249,7 @@ ui <- page_sidebar(
 # ---- Server ----------------------------------------------------------------------
 
 server <- function(input, output, session) {
-  rv <- reactiveValues(long = NULL, name = NULL, excluded = character(), samples = NULL)
+  rv <- reactiveValues(long = NULL, name = NULL, excluded = character(), controls = character(), samples = NULL)
 
   load_data <- function(path, name) {
     long <- tryCatch(read_melt(path, name), error = function(e) {
@@ -256,6 +260,7 @@ server <- function(input, output, session) {
     rv$long <- long
     rv$name <- tools::file_path_sans_ext(basename(name))
     rv$excluded <- character()
+    rv$controls <- character()
     updateSelectInput(session, "target", choices = unique(long$target))
   }
   observeEvent(input$file, load_data(input$file$datapath, input$file$name))
@@ -319,11 +324,15 @@ server <- function(input, output, session) {
   res <- reactive({
     p <- params()
     validate(need(p$pre[2] < p$post[1], "The pre-melt region must end before the post-melt region starts."))
-    tryCatch(analyse(mat(), p, rv$excluded), error = function(e) validate(conditionMessage(e)))
+    tryCatch(analyse(mat(), p, rv$excluded, rv$controls), error = function(e) validate(conditionMessage(e)))
   })
 
   # Results table with user-facing names
-  variant_names <- reactive(trimws(strsplit(input$variant_names %||% "", ",")[[1]]))
+  variant_names <- reactive({
+    nm <- trimws(strsplit(input$variant_names %||% "", ",")[[1]])
+    if (length(rv$controls) && (!length(nm) || !nzchar(nm[1]))) nm[1] <- "Control"
+    nm
+  })
 
   calls <- reactive({
     t <- res()$table
@@ -331,7 +340,8 @@ server <- function(input, output, session) {
     t$Call <- rename_variants(t$Call, variant_names())
     smp <- if (is.null(rv$samples)) NA else unname(rv$samples[t$Well])
     t$Sample <- ifelse(is.na(smp), "", smp)
-    t[c("Well", "Sample", "Call", "Confidence", "Tm1", "Tm2", "Variant", "Amplitude", "Status")]
+    t$Control <- ifelse(t$Well %in% rv$controls, "yes", "")
+    t[c("Well", "Sample", "Control", "Call", "Confidence", "Tm1", "Tm2", "Variant", "Amplitude", "Status")]
   })
 
   # Variant 1, 2, ... in order (Variant 1 = largest group), with user names applied
@@ -342,12 +352,17 @@ server <- function(input, output, session) {
     c(stats::setNames(palette_for(length(v), input$palette), v), FIXED_COLS)
   })
 
-  # Reference choices for the difference plot
+  # Reference choices for the difference plot; switch to the control wells when they are first marked
+  had_controls <- FALSE
   observe({
     v <- variant_levels()
-    ch <- c(stats::setNames(v, paste0(v, if (length(v)) c(" (largest group)", rep("", length(v) - 1)))),
+    ctrl <- length(rv$controls) > 0
+    ch <- c(if (ctrl) c("Control wells" = "__controls"),
+            stats::setNames(v, paste0(v, if (length(v) && !ctrl) c(" (largest group)", rep("", length(v) - 1)))),
             "All analysed wells" = "__mean", "Choose wells…" = "__wells")
     sel <- isolate(input$ref)
+    if (ctrl && !had_controls) sel <- "__controls"
+    had_controls <<- ctrl
     updateSelectInput(session, "ref", choices = ch, selected = if (!is.null(sel) && sel %in% ch) sel else ch[1])
   })
   observe({
@@ -359,7 +374,9 @@ server <- function(input, output, session) {
   observeEvent(input$plate_click, {
     w <- input$plate_click
     req(length(w) == 1, w %in% colnames(mat()$F))
-    rv$excluded <- if (w %in% rv$excluded) setdiff(rv$excluded, w) else c(rv$excluded, w)
+    toggle <- function(x) if (w %in% x) setdiff(x, w) else c(x, w)
+    if (identical(input$click_mode, "control")) rv$controls <- toggle(rv$controls)
+    else rv$excluded <- toggle(rv$excluded)
   })
   observeEvent(input$clear_excl, rv$excluded <- character())
 
@@ -469,7 +486,13 @@ server <- function(input, output, session) {
     div(class = "ms-stats",
         stat_card("data", "Data", rv$name, sprintf("%d wells · target %s", nrow(t), input$target), "data.svg",
                   small = TRUE),
-        stat_card("variants", "Variants found", res()$k, sprintf("%d wells called", sum(t$Status == "Called")), "variants.svg"),
+        stat_card("variants", "Variants found", res()$k, {
+          ctrl <- t[t$Control == "yes" & !is.na(t$Variant), ]
+          n_grp <- length(unique(ctrl$Variant))
+          paste0(sprintf("%d wells called", sum(t$Status == "Called")),
+                 if (n_grp > 1) sprintf(" · controls split across %d groups!", n_grp)
+                 else if (n_grp == 1) sprintf(" · %d controls", nrow(ctrl)))
+        }, "variants.svg"),
         stat_card("look", "Need a look", sum(t$Status %in% c("Low confidence", "Negative")),
                   sprintf("%d unknown · %d negative · %d excluded", sum(t$Status == "Low confidence"),
                           sum(t$Status == "Negative"), sum(t$Status == "Excluded")), "look.svg"))
@@ -492,10 +515,11 @@ server <- function(input, output, session) {
                   marker = list(size = sz, color = "white", line = list(color = "#d0d0d0", width = 1)))
     wells <- lapply(intersect(names(cc), unique(t$Call)), function(g) {
       i <- which(t$Call == g)
+      ctrl <- t$Control[i] == "yes"
       list(type = "scatter", mode = "markers", name = g, x = I(cols[i]), y = I(rows[i]),
            customdata = I(t$Well[i]), text = I(hover[i]), hovertemplate = "%{text}<extra></extra>",
            marker = list(size = sz, color = cc[[g]], symbol = if (g == "Excluded") "x" else "circle",
-                         line = list(color = "#555", width = 0.5)))
+                         line = list(color = I(ifelse(ctrl, "#111", "#555")), width = I(ifelse(ctrl, 3, 0.5)))))
     })
     plate <- fig(c(list(empty), wells), list(
       xaxis = list(tickvals = I(seq_len(nc)), side = "top", range = I(c(0.4, nc + 0.6)),
@@ -578,6 +602,7 @@ server <- function(input, output, session) {
     req(input$ref)
     w <- switch(input$ref,
                 "__mean" = analysed(),
+                "__controls" = intersect(rv$controls, analysed()),
                 "__wells" = input$ref_wells,
                 t$Well[t$Call == input$ref])
     if (!length(w)) w <- analysed()
@@ -588,7 +613,8 @@ server <- function(input, output, session) {
     req(input$ref)
     r <- res()
     i <- in_region()
-    lab <- if (input$ref == "__wells") "selected wells" else if (input$ref == "__mean") "all wells" else input$ref
+    lab <- switch(input$ref, "__wells" = "selected wells", "__mean" = "all wells", "__controls" = "control wells",
+                  input$ref)
     curve_plot(r$temp[i], (r$N - ref_curve())[i, , drop = FALSE], analysed(),
                paste0("Difference from ", lab, " (%)"), "difference",
                shapes = list(list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = 0, y1 = 0,
@@ -692,6 +718,7 @@ server <- function(input, output, session) {
     content = function(file) {
       s <- lapply(stats::setNames(setting_ids, setting_ids), function(id) input[[id]])
       s$excluded_wells <- rv$excluded
+      s$control_wells <- rv$controls
       s$data_file <- rv$name
       s$target <- input$target
       jsonlite::write_json(s, file, auto_unbox = TRUE, pretty = TRUE, null = "null")
@@ -709,6 +736,7 @@ server <- function(input, output, session) {
     if (!is.null(s$variant_names)) updateTextInput(session, "variant_names", value = s$variant_names)
     if (!is.null(s$ref_wells)) updateSelectizeInput(session, "ref_wells", selected = s$ref_wells)
     rv$excluded <- as.character(unlist(s$excluded_wells))
+    rv$controls <- as.character(unlist(s$control_wells))
     showNotification("Settings loaded.", type = "message")
   })
 }

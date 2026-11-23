@@ -200,7 +200,9 @@ temp_shift <- function(temp, N, threshold = 5, use = rep(TRUE, ncol(N)), region 
 # confidence (%) = posterior probability under spherical Gaussian clusters, and chosen k.
 # min_diff: in Auto mode, groups whose average curves differ by less than this (max
 # absolute difference, in the units of X: % fluorescence or degrees C) are not split.
-call_variants <- function(X, k = NA, method = c("hierarchical", "kmeans"), k_max = 6, min_diff = 0) {
+# first: logical, rows that are control wells; their group becomes variant 1.
+call_variants <- function(X, k = NA, method = c("hierarchical", "kmeans"), k_max = 6, min_diff = 0,
+                          first = rep(FALSE, nrow(X))) {
   method <- match.arg(method)
   X <- X0 <- as.matrix(X)
   n <- nrow(X)
@@ -233,8 +235,10 @@ call_variants <- function(X, k = NA, method = c("hierarchical", "kmeans"), k_max
   }
   k <- min(k, n)
   cl <- fit(k)
-  # Renumber so that variant 1 is the largest group
-  cl <- match(cl, as.integer(names(sort(table(cl), decreasing = TRUE))))
+  # Renumber so that variant 1 is the controls' group (if any), then by size
+  ord <- as.integer(names(sort(table(cl), decreasing = TRUE)))
+  if (any(first)) ord <- unique(c(as.integer(names(which.max(table(cl[first])))), ord))
+  cl <- match(cl, ord)
   centres <- do.call(rbind, lapply(seq_len(k), function(g) colMeans(X[cl == g, , drop = FALSE])))
   if (k == 1) {
     conf <- rep(100, n)
@@ -254,7 +258,7 @@ call_variants <- function(X, k = NA, method = c("hierarchical", "kmeans"), k_max
 
 # p: list(spar, pre, post, shift, shift_thr, neg_pct, features, method, k, min_conf,
 #         min_diff_shape (%), min_diff_tm (degrees C))
-analyse <- function(m, p, exclude = character()) {
+analyse <- function(m, p, exclude = character(), controls = character()) {
   sm <- smooth_curves(m$temp, m$F, p$spar)
   reg <- m$temp >= p$pre[1] & m$temp <= p$post[2]  # Tm peaks only inside the analysis region
   tm <- find_tm(m$temp[reg], sm$D[reg, , drop = FALSE])
@@ -275,7 +279,8 @@ analyse <- function(m, p, exclude = character()) {
     melt <- m$temp >= p$pre[2] & m$temp <= p$post[1]
     X <- if (p$features == "tm") tm[use, "Tm1", drop = FALSE] else t(N[melt, use, drop = FALSE])
     min_diff <- if (p$features == "tm") p$min_diff_tm else p$min_diff_shape
-    cv <- call_variants(X, if (identical(p$k, "auto")) NA else as.integer(p$k), p$method, min_diff = min_diff %||% 0)
+    cv <- call_variants(X, if (identical(p$k, "auto")) NA else as.integer(p$k), p$method, min_diff = min_diff %||% 0,
+                        first = use %in% controls)
     i <- match(use, wells)
     call[i] <- paste("Variant", cv$variant)
     conf[i] <- cv$confidence
