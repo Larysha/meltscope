@@ -95,4 +95,28 @@ if (nzchar(ex) && file.exists(ex)) {
   cat("Real-data check passed.\n")
 }
 
+# --- Optional: QuantStudio 3 HRM run (Clara, HRM_GAI_Run1) vs Thermo HRM Software -------
+# Needs "HRM Raw.csv" and "Results.csv" from tests/clara_data/*.zip extracted into tests/clara_data/.
+cd <- "tests/clara_data"
+if (all(file.exists(file.path(cd, c("HRM Raw.csv", "Results.csv"))))) {
+  mq <- to_matrix(read_melt(file.path(cd, "HRM Raw.csv")))
+  rawq <- read.csv(file.path(cd, "HRM Raw.csv"), comment.char = "#")
+  resq <- read.csv(file.path(cd, "Results.csv"), comment.char = "#", check.names = FALSE)
+  stopifnot(ncol(mq$F) == 31)  # failed wells (E9, NTCs) are not in Thermo's HRM export
+  instq <- sapply(split(rawq, rawq$Well), function(d) d$Temperature[which.max(d$Derivative)])
+  smq <- smooth_curves(mq$temp, mq$F, 0.4)
+  tmq <- find_tm(mq$temp, smq$D)[, "Tm1"]
+  stopifnot(max(abs(tmq - instq[names(tmq)])) < 0.06)
+  ctq <- setNames(resq$`Task/Control`, resq$Well)
+  ctq <- ctq[ctq %in% c("Ch WT", "MV WT")]
+  wq <- auto_windows(mq$temp, smq$D)
+  rq <- analyse(mq, modifyList(p, list(pre = wq$pre, post = wq$post)), controls = ctq)$table
+  thermo <- resq$`Variant Call`[match(rq$Well, resq$Well)]
+  # Agree with Thermo on every Ch WT / MV WT call. Thermo also splits off E2, E11, E12 as "variant1",
+  # but in its own aligned curves they sit 2.5-2.8% from Ch WT while Ch WT wells already spread to 2.1%.
+  stopifnot(all(rq$Call[thermo != "variant1"] == thermo[thermo != "variant1"]),
+            all(rq$Call[thermo == "variant1"] == "Ch WT"))
+  cat("QuantStudio HRM check passed.\n")
+}
+
 cat("All MeltScope tests passed.\n")

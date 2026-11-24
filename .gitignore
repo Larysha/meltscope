@@ -4,3 +4,4 @@ docs/
 .RData
 .Rproj.user/
 *.Rproj
+tests/clara_data/

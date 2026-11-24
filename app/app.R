@@ -296,7 +296,8 @@ server <- function(input, output, session) {
   observeEvent(input$samples, {
     f <- input$samples
     tab <- tryCatch(if (grepl("xlsx?$", f$name, ignore.case = TRUE)) readxl::read_excel(f$datapath)
-                    else utils::read.csv(f$datapath, check.names = FALSE), error = function(e) NULL)
+                    else utils::read.csv(f$datapath, check.names = FALSE, comment.char = "#"),  # Thermo "# ..." header
+                    error = function(e) NULL)
     nm <- norm_name(names(tab))
     wc <- which(nm %in% c("well", "wellposition"))[1]
     sc <- which(nm %in% c("sample", "samplename", "name"))[1]
@@ -553,7 +554,8 @@ server <- function(input, output, session) {
                    showgrid = FALSE, zeroline = FALSE),
       yaxis = list(tickvals = I(seq_len(nr)), ticktext = I(LETTERS[seq_len(nr)]), autorange = "reversed",
                    showgrid = FALSE, zeroline = FALSE),
-      legend = list(orientation = "h", y = -0.05), margin = list(t = 30, l = 30), font = list(size = input$font - 1)
+      legend = list(orientation = "h", y = -0.05), margin = list(t = 30, l = 30), font = list(size = input$font - 1),
+      dragmode = FALSE  # no zoom box: a click that drags a few pixels would zoom instead of marking the well
     ))
     c(plate, list(fitWells = list(rows = nr, cols = nc)))  # browser resizes wells to fit the plot
   })

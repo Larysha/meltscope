@@ -34,6 +34,8 @@ Shiny.addCustomMessageHandler("ms-plot", function (msg) {
     el._msClick = true;
     el.on("plotly_click", function (ev) {
       const point = ev.points[0];
+      // A click toggles the well, so the 2nd click of a double-click would undo the 1st: skip it
+      if (ev.event && ev.event.detail > 1) return;
       if (point && point.customdata !== undefined) {
         Shiny.setInputValue(msg.clickInput, point.customdata, { priority: "event" });
       }
