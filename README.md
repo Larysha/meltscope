@@ -56,7 +56,7 @@ tab separated) all work.
 | **Wide** (one column per well) | a `Temperature` column, then one column per well (`A1`, `A2`, …) | Bio-Rad CFX *Melt Curve RFU Results*, or a hand-made matrix |
 
 Example files for both layouts are in [`app/example/`](app/example/), and can also be downloaded from inside the
-app (step 1 in the sidebar). The example plate is **synthetic** (simulated WT, heterozygous and homozygous wells plus
+app (the *1. Data* menu). The example plate is **synthetic** (simulated WT, heterozygous and homozygous wells plus
 NTCs; see [`tools/make_example_data.R`](tools/make_example_data.R)). If your file has several assays (`Target` column), you can choose which one to analyse.
 
 **Sample names (optional):** a small table with a `Well` column and a `Sample` column (see
@@ -67,13 +67,15 @@ for your plate.
 
 ## Analysing a plate in six steps
 
-1. **Load data.** Upload your file, or click *Load example data* to try it out.
-2. **Check the melt regions.** On the *Raw data* tab, the blue (pre-melt) and red (post-melt) bands should sit on the
+1. **Load data.** Upload your file, or click *or try an example plate*.
+2. **Check the melt regions.** With *Raw* picked above the plot, the blue (pre-melt) and red (post-melt) bands should sit on the
    flat parts before and after the melt. They are suggested automatically; drag the sliders to adjust.
 3. **Look at the Normalised and Difference plots.** Wells with the same genotype have the same curve shape.
-4. **Check the calls** on *Plate & calls*. Set *Number of variants* if you know how many genotypes to expect, and name
+4. **Check the calls** on the plate map (*Plate & curves* tab). Set *Number of variants* if you know how many genotypes to expect, and name
    them (e.g. `WT, Het, Hom`) once you know which is which from your controls.
-5. **Remove bad wells** by clicking them on the plate map (click again to bring them back).
+5. **Compare and clean up.** Click or drag across wells on the plate map to select them: the plot next to the plate
+   highlights them (with the controls) and greys out the rest. *Exclude* / *Include* removes or restores the selected
+   wells.
 6. **Export.** Use the camera icon on any plot for a PNG or SVG, and *Results table → Download* for a spreadsheet of
    calls and Tm values. *Save settings* stores everything so the analysis can be repeated exactly.
 

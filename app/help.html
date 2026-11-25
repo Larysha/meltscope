@@ -4,26 +4,33 @@
   <li><b>Load data.</b> Upload the export straight from the instrument (no reformatting needed):
     QuantStudio <i>Melt Curve Raw</i> data (.xlsx or .csv), or any table with a <code>Temperature</code> column
     and one column per well (e.g. Bio-Rad CFX <i>Melt Curve RFU</i>). If the file holds several assays,
-    choose one under <i>Target</i>. Optionally upload sample names (download the template first).</li>
-  <li><b>Check the melt regions.</b> Open the <i>Raw data</i> tab. The blue band (pre-melt) and red band (post-melt)
+    choose one under <i>Data → Target</i>. Optionally upload sample names (download the template first). All settings are in
+    the menus along the top.</li>
+  <li><b>Check the melt regions.</b> Pick <i>Raw</i> above the plot. The blue band (pre-melt) and red band (post-melt)
     should sit on flat stretches just before and just after the melt. MeltScope suggests them automatically;
-    drag the sliders to adjust.</li>
+    drag the sliders under <i>Melt regions</i> to adjust.</li>
   <li><b>Look at the Normalised and Difference plots.</b> Curves that group together have the same melting
     behaviour. The difference plot subtracts a reference (your control wells if you marked any, otherwise the largest
     group) so that small shape differences are easy to see.</li>
-  <li><b>Check the calls</b> on the <i>Plate &amp; calls</i> tab. Each well gets a variant and a confidence.
+  <li><b>Check the calls</b> on the plate map. Each well gets a variant and a confidence.
     If you know how many genotypes to expect, set <i>Number of variants</i> instead of <i>Auto</i>.
     Give the variants names (e.g. <code>WT, Het, Hom</code>) once you know which is which, for example
     from control wells.</li>
-  <li><b>Mark control wells</b> (optional), like Task/Control in Thermo's HRM software: above the plate map choose
-    <i>mark it as a control</i>, type a name (e.g. <code>Ch WT</code>), then click those wells. Repeat with another
-    name for a second control (e.g. <code>MV WT</code>). Controls get a thick outline, each group holding controls is
+  <li><b>Mark control wells</b> (optional), like Task/Control in Thermo's HRM software: select the wells, type a name below the plate
+    map (e.g. <code>Ch WT</code>) and click <i>Mark control</i>. Repeat with another
+    name for a second control (e.g. <code>MV WT</code>). Controls get a white triangle, each group holding controls is
     named after them (the other groups are Variant 1, 2…), and the Difference plot can use any control as its 0 line;
     a single well works as a reference. Controls can also come from a <code>Control</code> column in the sample names file.
     If one control's wells end up in more than one group, the <i>Variants found</i> card warns you.</li>
+  <li><b>Compare wells directly.</b> Click or drag across wells on the plate map to select them (a row letter or
+    column number selects the whole row or column; Shift, &#8984; or Ctrl adds to the selection; Esc clears it).
+    The plot next to the plate then shows the selected wells in colour, plus the control wells if <i>Show controls
+    with selection</i> is ticked, and greys out the rest. Use the camera icon to save that view, e.g. one sample
+    against its control.</li>
   <li><b>Hover over a curve or a well</b> to see its sample, call, confidence and Tm.</li>
-  <li><b>Remove bad wells</b> by clicking them on the plate map. Click again to put them back.</li>
-  <li><b>Export.</b> Use the camera icon above any plot (PNG or SVG; choose under <i>Plot appearance</i>),
+  <li><b>Remove bad wells</b>: select them and click <i>Exclude</i>; select and click <i>Include</i> to put them
+    back.</li>
+  <li><b>Export.</b> Use the camera icon above any plot (PNG or SVG; choose under <i>Appearance</i>),
     and the download buttons on the <i>Results table</i> tab. Save your settings so the same analysis can be repeated later.</li>
 </ol>
 

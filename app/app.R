@@ -94,162 +94,187 @@ page_head <- tags$head(
     .ms-stat-value { font-size: 1.6rem; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
     .ms-stat-value.small { font-size: 1rem; padding: .3rem 0; }
     .ms-stat-detail { font-size: .85rem; opacity: .85; }
+    .ms-top { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; padding: .75rem 0; }
+    .ms-top .dropdown-menu { max-height: 80vh; overflow-y: auto; }
+    .ms-plate { display: grid; gap: 3px; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .ms-ph { font-size: .75rem; color: #666; text-align: center; align-self: center; cursor: pointer; }
+    .ms-well { aspect-ratio: 1; border-radius: 50%; border: 1px solid #555; cursor: pointer; position: relative; }
+    .ms-well.empty { background: #fff; border-color: #ddd; cursor: default; }
+    .ms-well { container-type: inline-size; }  /* lets the marks below scale with the well */
+    .ms-well.ctrl { border: 2px solid #111; }
+    .ms-well.ctrl::before, .ms-well.excl::after { position: absolute; inset: 0; display: flex; align-items: center;
+                                                 justify-content: center; line-height: 1; }
+    .ms-well.ctrl::before { content: '\\25B2'; font-size: 11px; font-size: 48cqi; color: #fff;
+                            text-shadow: 0 0 2px #000, 0 0 1px #000; }
+    .ms-well.excl::after { content: '\\00D7'; font-size: 14px; font-size: 70cqi; color: #666; font-weight: 700; }
+    .ms-well.excl.ctrl::before { content: none; }
+    .ms-ctrl-key { color: #fff; text-shadow: 0 0 2px #000, 0 0 1px #000; margin-right: .3rem; font-size: .8rem; }
+    .ms-landing { max-width: 34rem; margin: 12vh auto 0; padding: 2.5rem; text-align: center;
+                  border: 1px solid #dee2e6; border-radius: .75rem; }
+    .ms-landing h2 { font-size: 1.5rem; font-weight: 600; }
+    .ms-landing .form-group { margin: 1.5rem 0 .75rem; }
+    .ms-inline-input .form-group { margin-bottom: 0; }
+    .ms-well.sel { outline: 3px solid #f4a300; outline-offset: 1px; }
+    .ms-legend { display: flex; flex-wrap: wrap; gap: .25rem .9rem; font-size: .85rem; margin-top: .5rem; }
+    .ms-swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: 50%; margin-right: .3rem;
+                 vertical-align: -1px; border: 1px solid #555; }
   "))
 )
 
 # ---- UI ------------------------------------------------------------------------
 
-ui <- page_sidebar(
-  title = tags$span(tags$b("MeltScope"), tags$span(class = "text-muted ms-2 fs-6", "High Resolution Melt analysis")),
+# Settings live in dropdown menus along the top (Bootstrap dropdowns, so their inputs exist from the start),
+# leaving the full width for the plate map and the plot side by side. They close after a file is loaded.
+menu <- function(label, icon_name, ..., width = 340) {
+  div(class = "dropdown",
+      tags$button(class = "btn btn-outline-primary btn-sm dropdown-toggle", type = "button",
+                  `data-bs-toggle` = "dropdown", `data-bs-auto-close` = "outside", `aria-expanded` = "false",
+                  icon(icon_name), label),
+      div(class = "dropdown-menu p-3 shadow", style = sprintf("width: %dpx;", width), ...))
+}
+
+MELT_FILES <- c(".xlsx", ".xls", ".csv", ".txt")
+
+# Before any data: just a file picker. Menus, plate and plots appear once a file is loaded.
+landing <- div(class = "ms-landing",
+  tags$h2("Analyse a High Resolution Melt plate"),
+  tags$p(class = "text-muted", "Load the melt curve export from your qPCR machine, unchanged (Excel or CSV)."),
+  fileInput("file", NULL, accept = MELT_FILES, buttonLabel = "Choose file", width = "100%"),
+  actionLink("example", "or try an example plate"),
+  tags$p(class = "small text-muted mt-4 mb-0", "Your data stays on your computer.")
+)
+
+ui <- page_fluid(
   theme = bs_theme(version = 5, primary = "#1f6f8b", "font-size-base" = "0.95rem"),
-  fillable = FALSE,
   page_head,
-  sidebar = sidebar(
-    width = 340,
-    accordion(
-      open = c("1. Load data", "2. Melt regions"),
-      accordion_panel(
-        "1. Load data", icon = icon("file-arrow-up"),
-        fileInput("file", NULL, accept = c(".xlsx", ".xls", ".csv", ".txt"), buttonLabel = "Upload…",
-                  placeholder = "QuantStudio / CFX export"),
-        actionButton("example", "Or load example data (synthetic plate)",
-                     class = "btn-outline-primary btn-sm w-100 mb-3"),
-        help_tip("Upload the raw instrument export as is (Excel or CSV): QuantStudio 'Melt Curve Raw', ",
-                 "or any table with a Temperature column plus one column per well. Examples of both layouts: ",
-                 downloadLink("ex_long", "long, Excel"), " · ", downloadLink("ex_long_csv", "long, CSV"), " · ",
-                 downloadLink("ex_wide", "wide, CSV"), "."),
-        selectInput("target", "Target / assay", choices = NULL),
-        fileInput("samples", "Sample names (optional)", accept = c(".csv", ".xlsx"), buttonLabel = "Upload…"),
-        help_tip("A table with a 'Well' and a 'Sample' column, and optionally a 'Control' column naming control ",
-                 "wells (e.g. Ch WT; leave the others blank). ",
-                 downloadLink("sample_template", "Download a template for this plate."))
-      ),
-      accordion_panel(
-        "2. Melt regions", icon = icon("arrows-left-right-to-line"),
-        sliderInput("pre", "Pre-melt region (°C)", min = 60, max = 95, value = c(70, 71), step = 0.1),
-        sliderInput("post", "Post-melt region (°C)", min = 60, max = 95, value = c(88, 89), step = 0.1),
-        actionButton("auto_win", "Auto-detect regions", icon = icon("wand-magic-sparkles"),
-                     class = "btn-sm w-100 mb-2"),
-        help_tip("Pick flat stretches just before and just after the melt (shaded on the Raw plot). ",
-                 "Each curve is scaled from 100% (pre-melt) to 0% (post-melt).")
-      ),
-      accordion_panel(
-        "3. Curve processing", icon = icon("sliders"),
-        sliderInput("spar", "Smoothing", min = 0.2, max = 1, value = 0.4, step = 0.05),
-        help_tip("Higher = smoother derivative, but heavy smoothing pulls Tm values. ",
-                 "At 0.4, Tm agrees with the instrument's own values to about 0.01 °C."),
-        checkboxInput("shift", "Temperature shift (align curves)", TRUE),
-        conditionalPanel(
-          "input.shift",
-          sliderInput("shift_thr", "Align curves where they cross (% fluorescence)",
-                      min = 1, max = 30, value = 5, step = 1)
+  div(class = "ms-top",
+      tags$span(class = "me-2", tags$b(class = "fs-5", "MeltScope"),
+                tags$span(class = "text-muted ms-2", "High Resolution Melt analysis")),
+      conditionalPanel(
+        "output.has_data", div(class = "d-flex flex-wrap gap-1",  # d-flex on the panel itself would defeat hiding
+        menu(
+          "Data", "table",
+          fileInput("file2", "Melt curve file", accept = MELT_FILES),
+          selectInput("target", "Target", choices = NULL),
+          fileInput("samples", "Sample names (optional)", accept = c(".csv", ".xlsx")),
+          help_tip("Well and Sample columns, plus an optional Control column. Thermo's Results.csv works as is. ",
+                   downloadLink("sample_template", "Template")),
+          help_tip("Example files: ", downloadLink("ex_long", "long .xlsx"), " · ",
+                   downloadLink("ex_long_csv", "long .csv"), " · ", downloadLink("ex_wide", "wide .csv"))
         ),
-        help_tip("Removes small Tm offsets caused by plate position (heating zones), salt or DNA amount, so ",
-                 "curve shape stands out. Turn it off if your variants differ mainly by Tm ",
-                 "(e.g. some homozygous SNPs).")
-      ),
-      accordion_panel(
-        "4. Variant calling", icon = icon("layer-group"),
-        radioButtons("features", "Group wells by",
-                     c("Curve shape (difference curves)" = "shape", "Melting temperature (Tm) only" = "tm")),
-        selectInput("k", "Number of variants", c("Auto" = "auto", 1:8)),
-        conditionalPanel(
-          "input.k == 'auto'",
-          conditionalPanel(
-            "input.features == 'shape'",
-            numericInput("min_diff_shape", "Auto: minimum difference between variants (%)",
-                         value = 2, min = 0, step = 0.5)
-          ),
-          conditionalPanel(
-            "input.features == 'tm'",
-            numericInput("min_diff_tm", "Auto: minimum Tm difference between variants (°C)",
-                         value = 0.2, min = 0, step = 0.05)
-          ),
-          help_tip("Groups whose average curves differ by less than this are treated as one variant.")
+        menu(
+          "Melt regions", "arrows-left-right-to-line",
+          sliderInput("pre", "Pre-melt (°C)", min = 60, max = 95, value = c(70, 71), step = 0.1),
+          sliderInput("post", "Post-melt (°C)", min = 60, max = 95, value = c(88, 89), step = 0.1),
+          actionButton("auto_win", "Auto-detect", icon = icon("wand-magic-sparkles"), class = "btn-sm w-100 mb-2"),
+          help_tip("Flat stretches just before and after the melt (shaded on the Raw plot).")
         ),
-        selectInput("method", "Clustering method", c("Hierarchical (Ward)" = "hierarchical", "K-means" = "kmeans")),
-        sliderInput("min_conf", "Minimum confidence (%)", min = 0, max = 100, value = 80, step = 5),
-        help_tip("Wells below this are called 'Unknown'."),
-        numericInput("neg_pct", "Call 'Negative' if signal < (% of median)", value = 20, min = 0, max = 100, step = 5),
-        textInput("variant_names", "Variant names (optional)", placeholder = "e.g. WT, Het, Hom"),
-        help_tip("Comma-separated, in order Variant 1, 2, 3… (Variant 1 = largest group). Groups holding control ",
-                 "wells are named after the controls instead (see the plate map).")
-      ),
-      accordion_panel(
-        "5. Difference plot reference", icon = icon("crosshairs"),
-        selectInput("ref", "Subtract the average of", choices = NULL),
-        conditionalPanel("input.ref == '__wells'",
-                         selectizeInput("ref_wells", "Reference wells", NULL, multiple = TRUE))
-      ),
-      accordion_panel(
-        "Plot appearance", icon = icon("palette"),
-        selectInput("colour_by", "Colour curves by", c("Call" = "call", "Sample" = "sample", "Well" = "well")),
-        selectInput("palette", "Colours",
-                    c("Okabe-Ito (colour-blind safe)" = "Okabe-Ito", "Orchid", "Dark 3", "Set 2", "Viridis", "Zissou 1")),
-        sliderInput("lw", "Line width", min = 0.5, max = 4, value = 1.5, step = 0.25),
-        sliderInput("font", "Text size", min = 10, max = 22, value = 14, step = 1),
-        radioButtons("img_fmt", "Camera button saves as",
-                     c("PNG (high-res)" = "png", "SVG (editable)" = "svg"), inline = TRUE)
-      ),
-      accordion_panel(
-        "Save / load settings", icon = icon("floppy-disk"),
-        downloadButton("save_settings", "Save settings", class = "btn-sm w-100 mb-2"),
-        fileInput("load_settings", NULL, accept = ".json", buttonLabel = "Load settings…"),
-        help_tip("Saves every setting above plus excluded and control wells, so an analysis can be repeated exactly. ",
-                 "Load data first.")
+        menu(
+          "Processing", "sliders",
+          sliderInput("spar", "Smoothing", min = 0.2, max = 1, value = 0.4, step = 0.05),
+          checkboxInput("shift", "Temperature shift", TRUE),
+          conditionalPanel("input.shift",
+                           sliderInput("shift_thr", "Align at (% fluorescence)", min = 1, max = 30, value = 5, step = 1)),
+          help_tip("Shifting removes small Tm offsets so shape differences stand out. ",
+                   "Turn it off if variants differ mainly by Tm.")
+        ),
+        menu(
+          "Calling", "layer-group",
+          radioButtons("features", "Group wells by", c("Curve shape" = "shape", "Tm only" = "tm")),
+          selectInput("k", "Number of variants", c("Auto" = "auto", 1:8)),
+          conditionalPanel(
+            "input.k == 'auto'",
+            conditionalPanel("input.features == 'shape'",
+                             numericInput("min_diff_shape", "Auto: min. difference between variants (%)",
+                                          value = 2, min = 0, step = 0.5)),
+            conditionalPanel("input.features == 'tm'",
+                             numericInput("min_diff_tm", "Auto: min. Tm difference between variants (°C)",
+                                          value = 0.2, min = 0, step = 0.05))
+          ),
+          selectInput("method", "Clustering", c("Hierarchical (Ward)" = "hierarchical", "K-means" = "kmeans")),
+          sliderInput("min_conf", "Minimum confidence (%)", min = 0, max = 100, value = 80, step = 5),
+          numericInput("neg_pct", "Negative below (% of median signal)", value = 20, min = 0, max = 100, step = 5),
+          textInput("variant_names", "Variant names", placeholder = "e.g. WT, Het, Hom")
+        ),
+        menu(
+          "Appearance", "palette",
+          selectInput("colour_by", "Colour curves by", c("Call" = "call", "Sample" = "sample", "Well" = "well")),
+          selectInput("palette", "Colours",
+                      c("Okabe-Ito (colour-blind safe)" = "Okabe-Ito", "Orchid", "Dark 3", "Set 2", "Viridis",
+                        "Zissou 1")),
+          sliderInput("lw", "Line width", min = 0.5, max = 4, value = 1.5, step = 0.25),
+          sliderInput("font", "Text size", min = 10, max = 22, value = 14, step = 1),
+          radioButtons("img_fmt", "Camera saves", c("PNG" = "png", "SVG (editable)" = "svg"), inline = TRUE)
+        ),
+        menu(
+          "Save", "floppy-disk",
+          downloadButton("save_settings", "Save settings", class = "btn-sm w-100 mb-2"),
+          fileInput("load_settings", "Load settings", accept = ".json"),
+          help_tip("Includes excluded and control wells.")
+        ))
       )
-    )
   ),
-  uiOutput("status_boxes"),
-  navset_card_underline(
-    id = "tabs",
-    nav_panel(
-      "Plate & calls",
-      two_columns(
-        card(card_header("Plate map", tags$small(class = "text-muted ms-2", "thick outline = control well")),
-             radioButtons("click_mode", NULL, inline = TRUE,
-                          c("Click a well to exclude / include it" = "exclude",
-                            "Click a well to mark it as a control" = "control")),
-             conditionalPanel("input.click_mode == 'control'",
-                              textInput("control_name", "Control name for the wells you click", "Control",
-                                        placeholder = "e.g. Ch WT"),
-                              help_tip("Each group holding control wells is named after them; the rest are ",
-                                       "Variant 1, 2… Click a control again to unmark it. Controls can also come ",
-                                       "from a 'Control' column in the sample names file.")),
-             plot_div("plate", "380px"),
-             div(actionButton("clear_excl", "Include all wells again", class = "btn-sm btn-outline-secondary"),
-                 actionButton("clear_ctrl", "Clear controls", class = "btn-sm btn-outline-secondary"))),
-        card(card_header("Summary by call"), div(style = "overflow-x: auto;", tableOutput("summary")))
-      )
-    ),
-    nav_panel("Raw data", plot_div("p_raw", "560px")),
-    nav_panel("Normalised", plot_div("p_norm", "560px")),
-    nav_panel("Difference", plot_div("p_diff", "560px")),
-    nav_panel(
-      "Derivative",
-      radioButtons("deriv_type", NULL, inline = TRUE,
-                   c("Raw: −dF/dT (as instrument)" = "raw", "Normalised: −d(%)/dT" = "norm")),
-      plot_div("p_deriv", "520px")
-    ),
-    nav_panel(
-      "Results table",
-      div(class = "mb-2",
-          downloadButton("dl_results", "Download results (CSV)", class = "btn-sm"),
-          downloadButton("dl_curves", "Download processed curves (CSV)", class = "btn-sm")),
-      div(style = "max-height: 640px; overflow-y: auto;", uiOutput("results"))
-    ),
-    nav_panel(
-      "Clustering check",
-      two_columns(
-        card(card_header("Wells in PCA space"), plot_div("p_pca", "420px")),
-        card(card_header("How well do k groups separate?"), plot_div("p_sil", "420px"),
-             help_tip("Average silhouette: closer to 1 = cleaner separation. 'Auto' only considers splits with ",
-                      "silhouette ≥ 0.5 whose groups differ by at least the minimum difference, then picks the ",
-                      "smallest k within 0.05 of the best. Near-ties mean the number of variants is a judgement ",
-                      "call: set it under 'Number of variants'."))
-      )
-    ),
-    nav_panel("Help", icon = icon("circle-question"), includeHTML("help.html"))
+  conditionalPanel("!output.has_data", landing),
+  conditionalPanel(
+    "output.has_data",
+    uiOutput("status_boxes"),
+    navset_card_underline(
+      id = "tabs",
+      nav_panel(
+        "Plate & curves",
+        layout_columns(
+          col_widths = breakpoints(sm = 12, lg = c(5, 7)),
+          div(
+            div(class = "d-flex flex-wrap align-items-baseline gap-2 mb-2",
+                tags$b("Plate map"), tags$small(class = "text-muted", "drag to select · Shift / ⌘ adds · Esc clears"),
+                textOutput("sel_info", inline = TRUE)),
+            uiOutput("plate"),
+            div(class = "d-flex flex-wrap align-items-center gap-1 mt-3",
+                actionButton("sel_exclude", "Exclude", icon = icon("ban"), class = "btn-sm btn-outline-secondary"),
+                actionButton("sel_include", "Include", icon = icon("check"), class = "btn-sm btn-outline-secondary"),
+                tags$button(type = "button", class = "btn btn-sm btn-outline-secondary me-3",
+                            onclick = "msClearSelection()", "Clear"),
+                div(style = "width: 8rem;", class = "ms-inline-input",
+                    textInput("control_name", NULL, placeholder = "Control name")),
+                actionButton("sel_control", "Mark control", class = "btn-sm btn-outline-secondary"),
+                actionButton("sel_uncontrol", "Unmark", class = "btn-sm btn-outline-secondary")),
+            div(class = "mt-3", style = "overflow-x: auto;", tableOutput("summary"))
+          ),
+          div(
+            div(class = "d-flex flex-wrap align-items-center gap-3",
+                radioButtons("view", NULL, inline = TRUE, selected = "diff",
+                             c("Raw" = "raw", "Normalised" = "norm", "Difference" = "diff", "Derivative" = "deriv")),
+                checkboxInput("hl_controls", "Show controls with selection", TRUE)),
+            conditionalPanel("input.view == 'diff'",
+                             div(class = "d-flex flex-wrap gap-2",
+                                 selectInput("ref", "Subtract", choices = NULL),
+                                 conditionalPanel("input.ref == '__wells'",
+                                                  selectizeInput("ref_wells", "Wells", NULL, multiple = TRUE)))),
+            conditionalPanel("input.view == 'deriv'",
+                             radioButtons("deriv_type", NULL, inline = TRUE,
+                                          c("Raw −dF/dT (as instrument)" = "raw", "Normalised" = "norm"))),
+            plot_div("p_curve", "560px")
+          )
+        )
+      ),
+      nav_panel(
+        "Results table",
+        div(class = "mb-2",
+            downloadButton("dl_results", "Results (CSV)", class = "btn-sm"),
+            downloadButton("dl_curves", "Processed curves (CSV)", class = "btn-sm")),
+        div(style = "max-height: 640px; overflow-y: auto;", uiOutput("results"))
+      ),
+      nav_panel(
+        "Clustering check",
+        two_columns(
+          card(card_header("Wells in PCA space"), plot_div("p_pca", "420px")),
+          card(card_header("How well do k groups separate?"), plot_div("p_sil", "420px"),
+               help_tip("Closer to 1 = cleaner separation. Auto picks the fewest groups with silhouette ≥ 0.5 that ",
+                        "differ by at least the minimum difference."))
+        )
+      ),
+      nav_panel("Help", icon = icon("circle-question"), includeHTML("help.html"))
+    )
   )
 )
 
@@ -268,9 +293,14 @@ server <- function(input, output, session) {
     rv$name <- tools::file_path_sans_ext(basename(name))
     rv$excluded <- character()
     rv$controls <- character()
+    session$sendCustomMessage("ms-clear-selection", TRUE)
+    session$sendCustomMessage("ms-close-menus", TRUE)
     updateSelectInput(session, "target", choices = unique(long$target))
   }
   observeEvent(input$file, load_data(input$file$datapath, input$file$name))
+  observeEvent(input$file2, load_data(input$file2$datapath, input$file2$name))
+  output$has_data <- reactive(!is.null(rv$long))  # shows menus / plate instead of the landing page
+  outputOptions(output, "has_data", suspendWhenHidden = FALSE)
   observeEvent(input$example, {
     load_data(EXAMPLE, basename(EXAMPLE))
     smp <- utils::read.csv(EXAMPLE_SAMPLES)
@@ -278,7 +308,7 @@ server <- function(input, output, session) {
   })
 
   mat <- reactive({
-    validate(need(rv$long, "Upload a melt curve export, or click 'Load example data' in the sidebar."))
+    validate(need(rv$long, "No data loaded."))
     req(input$target %in% rv$long$target)
     to_matrix(rv$long[rv$long$target == input$target, ])
   })
@@ -313,6 +343,7 @@ server <- function(input, output, session) {
       ok <- !is.na(v) & !tolower(v) %in% c("", "unknown", "ntc", "no", "false", "na")
       rv$controls <- stats::setNames(v[ok], trimws(tab[[wc]])[ok])
     }
+    session$sendCustomMessage("ms-close-menus", TRUE)
   })
 
   example_download <- function(path) downloadHandler(function() basename(path), function(file) file.copy(path, file))
@@ -369,7 +400,7 @@ server <- function(input, output, session) {
     v <- variant_levels()
     cn <- unique(unname(rv$controls))
     ctrl <- length(cn) > 0
-    ch <- c(stats::setNames(paste0("__ctrl:", cn), paste(cn, "control wells")),
+    ch <- c(if (ctrl) stats::setNames(paste0("__ctrl:", cn), paste(cn, "control wells")),
             stats::setNames(v, paste0(v, if (length(v) && !ctrl) c(" (largest group)", rep("", length(v) - 1)))),
             "All analysed wells" = "__mean", "Choose wells…" = "__wells")
     sel <- isolate(input$ref)
@@ -382,22 +413,28 @@ server <- function(input, output, session) {
     updateSelectizeInput(session, "ref_wells", choices = w, selected = intersect(isolate(input$ref_wells), w))
   })
 
-  # ---- Exclusions via plate map
-  observeEvent(input$plate_click, {
-    w <- input$plate_click
-    req(length(w) == 1, w %in% colnames(mat()$F))
-    if (identical(input$click_mode, "control")) {
-      name <- trimws(input$control_name %||% "")
-      if (!nzchar(name)) name <- "Control"
-      # clicking a control again unmarks it; clicking it with a different name renames it
-      if (identical(unname(rv$controls[w]), name)) rv$controls <- rv$controls[names(rv$controls) != w]
-      else rv$controls[w] <- name
-    } else {
-      rv$excluded <- if (w %in% rv$excluded) setdiff(rv$excluded, w) else c(rv$excluded, w)
-    }
+  # ---- Plate selection (kept in the browser, www/meltscope.js; sent here when a click / drag ends)
+  selected <- reactive(intersect(as.character(unlist(input$plate_sel)), colnames(mat()$F)))
+  output$sel_info <- renderText({
+    s <- selected()
+    if (length(s) > 8) s <- c(s[1:8], "…")
+    if (!length(s)) "" else sprintf("· %d selected: %s", length(selected()), paste(s, collapse = " "))
   })
-  observeEvent(input$clear_excl, rv$excluded <- character())
-  observeEvent(input$clear_ctrl, rv$controls <- character())
+  observeEvent(input$sel_exclude, rv$excluded <- union(rv$excluded, selected()))
+  observeEvent(input$sel_include, rv$excluded <- setdiff(rv$excluded, selected()))
+  observeEvent(input$sel_control, {
+    name <- trimws(input$control_name %||% "")
+    ctrl <- rv$controls
+    ctrl[selected()] <- if (nzchar(name)) name else "Control"
+    rv$controls <- ctrl
+  })
+  observeEvent(input$sel_uncontrol, rv$controls <- rv$controls[!names(rv$controls) %in% selected()])
+
+  # Wells drawn in colour when some are selected (the rest are greyed out)
+  highlighted <- reactive({
+    s <- selected()
+    if (length(s) && isTRUE(input$hl_controls)) union(s, names(rv$controls)) else s
+  })
 
   # ---- Plot helpers
   labels <- reactive({
@@ -434,7 +471,7 @@ server <- function(input, output, session) {
 
   # Draw figure `id` in the browser (www/meltscope.js) whenever its inputs change, but only while its
   # tab is open. Using Plotly.js directly (not the plotly R package) keeps the in-browser download small.
-  render_fig <- function(id, tab, expr, click_input = NULL) {
+  render_fig <- function(id, tab, expr) {
     fig_expr <- substitute(expr)
     env <- parent.frame()
     observe({
@@ -442,7 +479,7 @@ server <- function(input, output, session) {
       fig <- tryCatch(eval(fig_expr, env),
                       shiny.silent.error = function(e) list(message = conditionMessage(e)),
                       error = function(e) list(message = paste("Could not draw this plot:", conditionMessage(e))))
-      session$sendCustomMessage("ms-plot", c(list(id = id, clickInput = click_input), fig))
+      session$sendCustomMessage("ms-plot", c(list(id = id), fig))
     })
   }
 
@@ -462,22 +499,27 @@ server <- function(input, output, session) {
 
   axis_title <- function(x) list(text = x)
 
-  # One trace per colour group (wells joined with gaps) keeps the legend short and plotting fast
+  # One trace per colour group (wells joined with gaps) keeps the legend short and plotting fast.
+  # With wells selected on the plate, only those (plus controls) are coloured; the rest are drawn grey underneath.
   curve_plot <- function(x, M, wells, ylab, fname, shapes = list(), annotations = list()) {
     validate(need(length(wells), "No wells to show (all excluded or negative)."))
     cg <- colouring()
-    grp <- cg$group[wells]
     lab <- well_info()
-    groups <- unique(grp[order(match(grp, names(cg$cols)))])
-    traces <- lapply(groups, function(g) {
-      w <- wells[grp == g]
-      list(type = "scatter", mode = "lines", name = g,
+    line_trace <- function(w, name, colour, width) {
+      list(type = "scatter", mode = "lines", name = name,
            x = I(rep(c(round(x, 3), NA), length(w))),
            y = I(signif(as.vector(rbind(M[, w, drop = FALSE], NA)), 6)),
            text = I(rep(unname(lab[w]), each = length(x) + 1)),
            hovertemplate = "%{text}<br>%{x:.2f} °C · %{y:.4g}<extra></extra>",
-           line = list(color = unname(cg$cols[g]), width = input$lw), connectgaps = FALSE)
-    })
+           line = list(color = colour, width = width), connectgaps = FALSE)
+    }
+    hl <- intersect(highlighted(), wells)
+    grey <- if (length(hl) && length(setdiff(wells, hl)))
+      list(line_trace(setdiff(wells, hl), "Other wells", "#d6d6d6", 0.8 * input$lw))
+    if (length(hl)) wells <- hl
+    grp <- cg$group[wells]
+    groups <- unique(grp[order(match(grp, names(cg$cols)))])
+    traces <- c(grey, lapply(groups, function(g) line_trace(wells[grp == g], g, unname(cg$cols[g]), input$lw)))
     fig(traces, list(
       xaxis = list(title = axis_title("Temperature (°C)"), zeroline = FALSE, showgrid = FALSE, ticks = "outside"),
       yaxis = list(title = axis_title(ylab), zeroline = FALSE, gridcolor = "#eeeeee", ticks = "outside"),
@@ -506,11 +548,7 @@ server <- function(input, output, session) {
 
   # ---- Outputs
   output$status_boxes <- renderUI({
-    if (is.null(rv$long)) {
-      return(div(class = "alert alert-light border mb-3",
-                 icon("circle-info"), " Start by uploading a file or loading the example data (sidebar, step 1). ",
-                 "The Help tab walks through each step."))
-    }
+    req(rv$long)
     t <- calls()
     div(class = "ms-stats",
         stat_card("data", "Data", rv$name, sprintf("%d wells · target %s", nrow(t), input$target), "data.svg",
@@ -527,37 +565,36 @@ server <- function(input, output, session) {
                           sum(t$Status == "Negative"), sum(t$Status == "Excluded")), "look.svg"))
   })
 
-  render_fig("plate", "Plate & calls", click_input = "plate_click", {
+  # Plate map: a plain HTML grid (not a plot), so clicks and drags work the same in every browser.
+  # Every cell carries data-r / data-c (0 = header: whole row / column); selection is handled in www/meltscope.js.
+  output$plate <- renderUI({
     t <- calls()
     rows <- match(substr(t$Well, 1, 1), LETTERS)
     cols <- as.integer(substring(t$Well, 2))
     big <- max(rows, na.rm = TRUE) > 8 || max(cols, na.rm = TRUE) > 12
     nr <- if (big) 16 else 8
     nc <- if (big) 24 else 12
-    grid <- expand.grid(r = seq_len(nr), c = seq_len(nc))
     cc <- call_colours()
-    hover <- unname(well_info()[t$Well])
-    sz <- 10  # starting size; www/meltscope.js resizes wells to the available space
-    empty <- list(type = "scatter", mode = "markers", x = I(grid$c), y = I(grid$r), hoverinfo = "skip",
-                  showlegend = FALSE,
-                  marker = list(size = sz, color = "white", line = list(color = "#d0d0d0", width = 1)))
-    wells <- lapply(intersect(names(cc), unique(t$Call)), function(g) {
-      i <- which(t$Call == g)
-      ctrl <- nzchar(t$Control[i])
-      list(type = "scatter", mode = "markers", name = g, x = I(cols[i]), y = I(rows[i]),
-           customdata = I(t$Well[i]), text = I(hover[i]), hovertemplate = "%{text}<extra></extra>",
-           marker = list(size = sz, color = cc[[g]], symbol = if (g == "Excluded") "x" else "circle",
-                         line = list(color = I(ifelse(ctrl, "#111", "#555")), width = I(ifelse(ctrl, 3, 0.5)))))
-    })
-    plate <- fig(c(list(empty), wells), list(
-      xaxis = list(tickvals = I(seq_len(nc)), side = "top", range = I(c(0.4, nc + 0.6)),
-                   showgrid = FALSE, zeroline = FALSE),
-      yaxis = list(tickvals = I(seq_len(nr)), ticktext = I(LETTERS[seq_len(nr)]), autorange = "reversed",
-                   showgrid = FALSE, zeroline = FALSE),
-      legend = list(orientation = "h", y = -0.05), margin = list(t = 30, l = 30), font = list(size = input$font - 1),
-      dragmode = FALSE  # no zoom box: a click that drags a few pixels would zoom instead of marking the well
-    ))
-    c(plate, list(fitWells = list(rows = nr, cols = nc)))  # browser resizes wells to fit the plot
+    tip <- gsub("<[^>]+>", "", gsub("<br>", "\n", well_info()))  # plain-text tooltip
+    cell <- function(r, c) {
+      i <- which(rows == r & cols == c)
+      if (!length(i)) return(div(class = "ms-well empty", `data-r` = r, `data-c` = c))
+      w <- t$Well[i]
+      div(class = paste("ms-well", if (t$Status[i] == "Excluded") "excl", if (nzchar(t$Control[i])) "ctrl"),
+          `data-r` = r, `data-c` = c, `data-well` = w, title = tip[[w]], style = paste0("background:", cc[[t$Call[i]]]))
+    }
+    tagList(
+      div(class = "ms-plate", style = sprintf("grid-template-columns: 1.2em repeat(%d, 1fr);", nc),
+          div(class = "ms-ph", `data-r` = 0, `data-c` = 0, title = "Select all", HTML("&#9698;")),
+          lapply(seq_len(nc), function(c) div(class = "ms-ph", `data-r` = 0, `data-c` = c, c)),
+          lapply(seq_len(nr), function(r) tagList(
+            div(class = "ms-ph", `data-r` = r, `data-c` = 0, LETTERS[r]),
+            lapply(seq_len(nc), function(c) cell(r, c))))),
+      div(class = "ms-legend",
+          lapply(intersect(names(cc), unique(t$Call)), function(g)
+            tags$span(tags$span(class = "ms-swatch", style = paste0("background:", cc[[g]])), g)),
+          if (any(nzchar(t$Control))) tags$span(tags$span(class = "ms-ctrl-key", HTML("&#9650;")), "Control"))
+    )
   })
 
   summary_by_call <- reactive({
@@ -602,7 +639,7 @@ server <- function(input, output, session) {
         modalDialog(title = sprintf("%d wells need a look", nrow(t)), size = "l", easyClose = TRUE,
                     if (nrow(t)) tagList(
                       help_tip("Unknown = no confident call; Negative = little or no melt signal; ",
-                               "Excluded = removed by you. Click a well on the plate map to exclude or include it."),
+                               "Excluded = removed by you. Select wells on the plate map, then Exclude or Include."),
                       scroll(html_table(t, tint(t))))
                     else p("Nothing to check: every well got a confident call and none are excluded."))
       })
@@ -611,18 +648,6 @@ server <- function(input, output, session) {
   observeEvent(input$go_results, {
     removeModal()
     nav_select("tabs", "Results table")
-  })
-
-  render_fig("p_raw", "Raw data", {
-    r <- res()
-    wells <- setdiff(colnames(r$F), rv$excluded)
-    curve_plot(r$temp, r$F, wells, "Fluorescence", "raw", shapes = region_shapes(), annotations = region_labels())
-  })
-
-  render_fig("p_norm", "Normalised", {
-    r <- res()
-    i <- in_region()
-    curve_plot(r$temp[i], r$N[i, , drop = FALSE], analysed(), "Normalised fluorescence (%)", "normalised")
   })
 
   ref_curve <- reactive({
@@ -639,18 +664,6 @@ server <- function(input, output, session) {
     rowMeans(r$N[, w, drop = FALSE])
   })
 
-  render_fig("p_diff", "Difference", {
-    req(input$ref)
-    r <- res()
-    i <- in_region()
-    lab <- switch(input$ref, "__wells" = "selected wells", "__mean" = "all wells",
-                  sub("^__ctrl:(.*)", "\\1 control wells", input$ref))
-    curve_plot(r$temp[i], (r$N - ref_curve())[i, , drop = FALSE], analysed(),
-               paste0("Difference from ", lab, " (%)"), "difference",
-               shapes = list(list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = 0, y1 = 0,
-                                  line = list(color = "#999", width = 1, dash = "dot"))))
-  })
-
   norm_deriv <- reactive({
     r <- res()
     h <- diff(r$temp[1:2])
@@ -661,16 +674,30 @@ server <- function(input, output, session) {
     D
   })
 
-  render_fig("p_deriv", "Derivative", {
+  # One plot next to the plate; the buttons above it pick which curves it shows
+  render_fig("p_curve", "Plate & curves", {
     r <- res()
-    if (input$deriv_type == "raw") {
-      curve_plot(r$temp, r$D, setdiff(colnames(r$F), rv$excluded), "−dF/dT", "derivative",
-                 shapes = region_shapes(), annotations = region_labels())
-    } else {
-      i <- in_region()
-      curve_plot(r$temp[i], norm_deriv()[i, , drop = FALSE], analysed(), "−d(normalised %)/dT",
-                 "derivative_normalised")
-    }
+    i <- in_region()
+    kept <- setdiff(colnames(r$F), rv$excluded)
+    switch(input$view,
+      raw = curve_plot(r$temp, r$F, kept, "Fluorescence", "raw", shapes = region_shapes(),
+                       annotations = region_labels()),
+      norm = curve_plot(r$temp[i], r$N[i, , drop = FALSE], analysed(), "Normalised fluorescence (%)", "normalised"),
+      diff = {
+        req(input$ref)
+        lab <- switch(input$ref, "__wells" = "selected wells", "__mean" = "all wells",
+                      sub("^__ctrl:(.*)", "\\1 control wells", input$ref))
+        curve_plot(r$temp[i], (r$N - ref_curve())[i, , drop = FALSE], analysed(),
+                   paste0("Difference from ", lab, " (%)"), "difference",
+                   shapes = list(list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = 0, y1 = 0,
+                                      line = list(color = "#999", width = 1, dash = "dot"))))
+      },
+      deriv = if (input$deriv_type == "raw") {
+        curve_plot(r$temp, r$D, kept, "−dF/dT", "derivative", shapes = region_shapes(), annotations = region_labels())
+      } else {
+        curve_plot(r$temp[i], norm_deriv()[i, , drop = FALSE], analysed(), "−d(normalised %)/dT",
+                   "derivative_normalised")
+      })
   })
 
   output$results <- renderUI({
@@ -768,6 +795,7 @@ server <- function(input, output, session) {
     rv$excluded <- as.character(unlist(s$excluded_wells))
     ctrl <- unlist(s$control_wells)
     rv$controls <- if (is.null(names(ctrl))) stats::setNames(rep("Control", length(ctrl)), ctrl) else ctrl
+    session$sendCustomMessage("ms-close-menus", TRUE)
     showNotification("Settings loaded.", type = "message")
   })
 }
