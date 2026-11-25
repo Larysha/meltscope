@@ -16,6 +16,11 @@ stopifnot(abs(tm[1:6, "Tm1"] - 82) < 0.05, abs(tm[7:10, "Tm1"] - 83) < 0.05)
 
 w <- auto_windows(temp, sm$D[, 1:10])
 stopifnot(w$pre[2] < 81, w$post[1] > 84)
+# Full-plate exports include failed wells / NTCs (>5% of wells): they must not drag the
+# pre-melt window to the start of the run (Clara's callus plate: 8 of 96 failed)
+f_fail <- cbind(F[, 1:10], sapply(1:4, function(i) 2e4 - 300 * (temp - 70) + rnorm(length(temp), 0, 500)))
+wf <- auto_windows(temp, smooth_curves(temp, f_fail, 0.4)$D)
+stopifnot(wf$pre[1] > 74, abs(wf$pre[2] - w$pre[2]) < 0.3, abs(wf$post[1] - w$post[1]) < 0.3)
 
 N <- normalise(temp, sm$S, w$pre, w$post)
 ip <- temp >= w$pre[1] & temp <= w$pre[2]
@@ -117,6 +122,32 @@ if (all(file.exists(file.path(cd, c("HRM Raw.csv", "Results.csv"))))) {
   stopifnot(all(rq$Call[thermo != "variant1"] == thermo[thermo != "variant1"]),
             all(rq$Call[thermo == "variant1"] == "Ch WT"))
   cat("QuantStudio HRM check passed.\n")
+}
+
+# --- Optional: Clara's callus plate (HRM_GAI_callusRun), full 96-well Melt Curve Raw export ---
+# Unzip both plate-2 zips from tests/clara_data/ into tests/clara_data/plate2/.
+cd2 <- "tests/clara_data/plate2"
+f2 <- file.path(cd2, c("HRM_GAI_callusRun_Melt Curve Raw.xlsx", "HRM Raw.csv", "Results.csv"))
+if (all(file.exists(f2))) {
+  m2 <- to_matrix(read_melt(f2[1]))
+  w2 <- auto_windows(m2$temp, smooth_curves(m2$temp, m2$F, 0.4)$D)
+  stopifnot(w2$pre[1] > 75, w2$pre[2] < 79, w2$post[1] > 84)  # was 60-61 before failed wells were ignored
+  # Tm1 vs Thermo on the HRM export Thermo itself used
+  mh <- to_matrix(read_melt(f2[2]))
+  rawh <- read.csv(f2[2], comment.char = "#")
+  insth <- sapply(split(rawh, rawh$Well), function(d) d$Temperature[which.max(d$Derivative)])
+  tmh <- find_tm(mh$temp, smooth_curves(mh$temp, mh$F, 0.4)$D)[, "Tm1"]
+  stopifnot(max(abs(tmh - insth[names(tmh)])) < 0.06)
+  res2 <- read.csv(f2[3], comment.char = "#", check.names = FALSE)
+  om <- res2$Well[res2$Omit == "true"]  # wells Clara omitted in Thermo
+  r2 <- analyse(m2, modifyList(p, list(pre = w2$pre, post = w2$post, shift = TRUE)), exclude = om)$table
+  stopifnot(setequal(r2$Well[r2$Status == "Negative"], c("H9", "H10", "H11", "H12")))
+  th2 <- res2$`Variant Call`[match(r2$Well, res2$Well)]
+  k2 <- r2$Status == "Called" & th2 %in% c("variant1", "variant2")
+  # Both find one main group plus a few odd wells; they agree on the main group and on G1
+  stopifnot(sum((r2$Variant[k2] == "Variant 1") == (th2[k2] == "variant1")) >= 75,
+            r2$Variant[r2$Well == "G1"] == "Variant 2")
+  cat("Callus plate check passed.\n")
 }
 
 cat("All MeltScope tests passed.\n")

@@ -135,7 +135,12 @@ find_tm <- function(temp, D, min_frac = 0.25, min_sep = 1) {
 # below `frac` of its height over the local floor on each side (raw -dF/dT has a sloping
 # background before the melt). Use the earliest start / latest end across wells (5th/95th
 # percentile, so one odd well can't drag the windows), then 1 degree windows just outside.
+# Failed wells / NTCs (peak < 25% of the median peak) are ignored: their "peak" is noise at
+# the edge of the run, and a full-plate export can hold more of them than the percentile absorbs.
 auto_windows <- function(temp, D, frac = 0.1, width = 1, gap = 1) {
+  prom <- apply(D, 2, function(m) max(m) - min(m))
+  ok <- prom >= 0.25 * stats::median(prom)
+  if (any(ok)) D <- D[, ok, drop = FALSE]
   n <- nrow(D)
   edges <- apply(D, 2, function(m) {
     top <- which.max(m)
