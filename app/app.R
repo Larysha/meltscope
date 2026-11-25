@@ -114,6 +114,10 @@ page_head <- tags$head(
     .ms-landing h2 { font-size: 1.5rem; font-weight: 600; }
     .ms-landing .form-group { margin: 1.5rem 0 .75rem; }
     .ms-inline-input .form-group { margin-bottom: 0; }
+    .ms-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1.25rem; min-height: 2.4rem;
+              margin-bottom: .5rem; }
+    .ms-bar .form-group, .ms-bar .shiny-input-container { margin-bottom: 0; }
+    .ms-bar .selectize-control { margin-bottom: 0; }
     .ms-well.sel { outline: 3px solid #f4a300; outline-offset: 1px; }
     .ms-legend { display: flex; flex-wrap: wrap; gap: .25rem .9rem; font-size: .85rem; margin-top: .5rem; }
     .ms-swatch { display: inline-block; width: .8rem; height: .8rem; border-radius: 50%; margin-right: .3rem;
@@ -225,7 +229,7 @@ ui <- page_fluid(
         layout_columns(
           col_widths = breakpoints(sm = 12, lg = c(5, 7)),
           div(
-            div(class = "d-flex flex-wrap align-items-baseline gap-2 mb-2",
+            div(class = "ms-bar",
                 tags$b("Plate map"), tags$small(class = "text-muted", "drag to select · Shift / ⌘ adds · Esc clears"),
                 textOutput("sel_info", inline = TRUE)),
             uiOutput("plate"),
@@ -238,21 +242,24 @@ ui <- page_fluid(
                     textInput("control_name", NULL, placeholder = "Control name")),
                 actionButton("sel_control", "Mark control", class = "btn-sm btn-outline-secondary"),
                 actionButton("sel_uncontrol", "Unmark", class = "btn-sm btn-outline-secondary")),
+            checkboxInput("hl_controls", "Show controls in the plot with the selection", TRUE, width = "100%"),
             div(class = "mt-3", style = "overflow-x: auto;", tableOutput("summary"))
           ),
           div(
-            div(class = "d-flex flex-wrap align-items-center gap-3",
+            # One row, same height as the plate's title row, so plate and plot start level
+            div(class = "ms-bar",
                 radioButtons("view", NULL, inline = TRUE, selected = "diff",
                              c("Raw" = "raw", "Normalised" = "norm", "Difference" = "diff", "Derivative" = "deriv")),
-                checkboxInput("hl_controls", "Show controls with selection", TRUE)),
-            conditionalPanel("input.view == 'diff'",
-                             div(class = "d-flex flex-wrap gap-2",
-                                 selectInput("ref", "Subtract", choices = NULL),
-                                 conditionalPanel("input.ref == '__wells'",
-                                                  selectizeInput("ref_wells", "Wells", NULL, multiple = TRUE)))),
-            conditionalPanel("input.view == 'deriv'",
-                             radioButtons("deriv_type", NULL, inline = TRUE,
-                                          c("Raw −dF/dT (as instrument)" = "raw", "Normalised" = "norm"))),
+                conditionalPanel("input.view == 'diff'",
+                                 div(class = "d-flex align-items-center gap-2",
+                                     tags$label(`for` = "ref", class = "text-nowrap", "Zero line:"),
+                                     div(style = "width: 20rem;", selectInput("ref", NULL, choices = NULL)))),
+                conditionalPanel("input.view == 'deriv'",
+                                 radioButtons("deriv_type", NULL, inline = TRUE,
+                                              c("Raw −dF/dT (as instrument)" = "raw", "Normalised" = "norm")))),
+            conditionalPanel("input.view == 'diff' && input.ref == '__wells'",
+                             selectizeInput("ref_wells", NULL, NULL, multiple = TRUE, width = "100%",
+                                            options = list(placeholder = "Pick the wells for the zero line"))),
             plot_div("p_curve", "560px")
           )
         )
@@ -394,19 +401,28 @@ server <- function(input, output, session) {
     c(stats::setNames(palette_for(length(v), input$palette), v), FIXED_COLS)
   })
 
-  # Reference choices for the difference plot; switch to the control wells when they are first marked
+  # Reference choices for the difference plot, under headings so it is clear what gets averaged:
+  # the wells marked as controls, or every well called into a group. Switches to the controls when first marked.
   had_controls <- FALSE
   observe({
     v <- variant_levels()
+    t <- calls()
     cn <- unique(unname(rv$controls))
     ctrl <- length(cn) > 0
-    ch <- c(if (ctrl) stats::setNames(paste0("__ctrl:", cn), paste(cn, "control wells")),
-            stats::setNames(v, paste0(v, if (length(v) && !ctrl) c(" (largest group)", rep("", length(v) - 1)))),
-            "All analysed wells" = "__mean", "Choose wells…" = "__wells")
+    n_ctrl <- vapply(cn, function(x) sum(names(rv$controls)[rv$controls == x] %in% analysed()), 0)
+    n_grp <- vapply(v, function(x) sum(t$Call == x), 0)
+    ch <- list(
+      "Marked control wells" = if (ctrl) stats::setNames(paste0("__ctrl:", cn), sprintf("%s (%d wells)", cn, n_ctrl)),
+      "Called groups" = stats::setNames(v, sprintf("%s group (%d wells%s)", v, n_grp,
+                                                   ifelse(seq_along(v) == 1 & !ctrl, ", largest", ""))),
+      "Other" = c(stats::setNames("__mean", sprintf("All analysed wells (%d)", length(analysed()))),
+                  "Wells I choose…" = "__wells"))
+    ch <- Filter(length, ch)
+    vals <- unlist(ch, use.names = FALSE)
     sel <- isolate(input$ref)
-    if (ctrl && !had_controls) sel <- ch[1]
+    if (ctrl && !had_controls) sel <- vals[1]
     had_controls <<- ctrl
-    updateSelectInput(session, "ref", choices = ch, selected = if (!is.null(sel) && sel %in% ch) sel else ch[1])
+    updateSelectInput(session, "ref", choices = ch, selected = if (!is.null(sel) && sel %in% vals) sel else vals[1])
   })
   observe({
     w <- calls()$Well[calls()$Status %in% c("Called", "Low confidence")]
@@ -685,8 +701,12 @@ server <- function(input, output, session) {
       norm = curve_plot(r$temp[i], r$N[i, , drop = FALSE], analysed(), "Normalised fluorescence (%)", "normalised"),
       diff = {
         req(input$ref)
-        lab <- switch(input$ref, "__wells" = "selected wells", "__mean" = "all wells",
-                      sub("^__ctrl:(.*)", "\\1 control wells", input$ref))
+        lab <- switch(input$ref, "__wells" = "chosen wells", "__mean" = "all wells",
+                      if (startsWith(input$ref, "__ctrl:")) {
+                        nm <- sub("^__ctrl:", "", input$ref)
+                        if (tolower(nm) == "control") "control wells" else paste(nm, "control wells")
+                      }
+                      else paste(input$ref, "group"))
         curve_plot(r$temp[i], (r$N - ref_curve())[i, , drop = FALSE], analysed(),
                    paste0("Difference from ", lab, " (%)"), "difference",
                    shapes = list(list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = 0, y1 = 0,
